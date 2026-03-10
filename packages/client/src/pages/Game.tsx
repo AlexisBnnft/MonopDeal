@@ -1,16 +1,20 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   DndContext, DragOverlay,
   type DragStartEvent, type DragEndEvent,
   PointerSensor, TouchSensor, useSensor, useSensors,
 } from '@dnd-kit/core';
+import {
+  SortableContext, horizontalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable';
+import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { socket } from '../socket/index.ts';
 import { useStore } from '../store/useStore.ts';
 import {
   COLOR_HEX, COLOR_NAMES, RENT_VALUES, displayName, REACTION_EMOJIS,
   type AnyCard, type PropertyColor, type PropertySet, type Player, type PendingAction,
 } from '@monopoly-deal/shared';
-import { CardInHand, CardGhost } from '../components/CardInHand.tsx';
+import { CardInHand, SortableCardInHand, CardGhost } from '../components/CardInHand.tsx';
 import { PlayerArea } from '../components/PlayerArea.tsx';
 import { PropertySetCard } from '../components/PropertySetCard.tsx';
 import { DropZone } from '../components/DropZone.tsx';
@@ -47,12 +51,52 @@ export function Game() {
     const timer = setTimeout(() => removeFloatingReaction(latest.id), 3000);
     return () => clearTimeout(timer);
   }, [floatingReactions]);
+  const [reorderMode, setReorderMode] = useState(false);
+  const [localHandOrder, setLocalHandOrder] = useState<string[]>([]);
+  const [actionFlash, setActionFlash] = useState<string | null>(null);
+  const prevPendingRef = useRef<PendingAction | null>(null);
 
+  // Sync localHandOrder with server hand: preserve existing order, append new, remove gone
+  useEffect(() => {
+    const serverIds = new Set(hand.map(c => c.id));
+    setLocalHandOrder(prev => {
+      const kept = prev.filter(id => serverIds.has(id));
+      const existing = new Set(kept);
+      const added = hand.filter(c => !existing.has(c.id)).map(c => c.id);
+      return [...kept, ...added];
+    });
+  }, [hand]);
+
+  // Auto-disable reorder mode when entering discard phase
+  useEffect(() => {
+    if (gameState?.turnPhase === 'discard') setReorderMode(false);
+  }, [gameState?.turnPhase]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
+
+  const pendingAction = gameState?.pendingAction ?? null;
+  useEffect(() => {
+    if (pendingAction && pendingAction !== prevPendingRef.current) {
+      const label = pendingAction.type === 'rent' ? 'Loyer !'
+        : pendingAction.type === 'its_my_birthday' ? 'Anniversaire !'
+        : pendingAction.type === 'debt_collector' ? 'Dette !'
+        : pendingAction.type === 'deal_breaker' ? 'Deal Breaker !'
+        : pendingAction.type === 'sly_deal' ? 'Vol de transaction'
+        : pendingAction.type === 'forced_deal' ? 'Marché forcé !'
+        : 'Action !';
+      setActionFlash(label);
+      const t = setTimeout(() => setActionFlash(null), 1800);
+      prevPendingRef.current = pendingAction;
+      return () => clearTimeout(t);
+    }
+    if (!pendingAction && prevPendingRef.current) {
+      setActionFlash(null);
+    }
+    prevPendingRef.current = pendingAction;
+  }, [pendingAction]);
 
   if (!gameState) return null;
 
@@ -68,6 +112,22 @@ export function Game() {
     !gameState.pendingAction.respondedPlayerIds.includes(myId!);
 
   const jsnChainForMe = gameState.pendingAction?.jsnChain?.awaitingCounterFrom === myId;
+
+  // Build ordered hand from localHandOrder
+  const handMap = new Map(hand.map(c => [c.id, c]));
+  const sortedHand = localHandOrder.map(id => handMap.get(id)).filter(Boolean) as AnyCard[];
+
+  const toggleReorderMode = useCallback(() => {
+    setReorderMode(prev => {
+      if (!prev) {
+        // Turning ON: force hand visible, cancel targeting, clear selection
+        setHandVisible(true);
+        setTargeting(null);
+        setSelectedCardId(null);
+      }
+      return !prev;
+    });
+  }, []);
 
   // ─── Targeting logic ───────────────────────────────────────────────
 
@@ -235,6 +295,7 @@ export function Game() {
   // ─── Card click ────────────────────────────────────────────────────
 
   function handleCardClick(card: AnyCard) {
+    if (reorderMode) return;
     if (targeting) { cancelTargeting(); return; }
     if (isMyTurn && gameState.turnPhase === 'discard') {
       socket.emit('game:discard', { cardIds: [card.id] });
@@ -267,11 +328,24 @@ export function Game() {
   // ─── Drag and Drop ─────────────────────────────────────────────────
 
   function handleDragStart(event: DragStartEvent) {
+    if (reorderMode) return;
     const card = event.active.data.current?.card as AnyCard | undefined;
     if (card) setDraggedCard(card);
   }
 
   function handleDragEnd(event: DragEndEvent) {
+    if (reorderMode) {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      setLocalHandOrder(prev => {
+        const oldIdx = prev.indexOf(active.id as string);
+        const newIdx = prev.indexOf(over.id as string);
+        if (oldIdx === -1 || newIdx === -1) return prev;
+        return arrayMove(prev, oldIdx, newIdx);
+      });
+      return;
+    }
+
     setDraggedCard(null);
     const { active, over } = event;
     if (!over || !isMyTurn || !gameState) return;
@@ -379,14 +453,73 @@ export function Game() {
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="game-screen">
 
-        {gameState.phase === 'finished' && (
-          <div className="overlay">
-            <div className="winner-box">
-              <h1>{gameState.winnerId === myId ? 'VICTOIRE !' : `${gameState.players.find(p => p.id === gameState.winnerId)?.name} a gagne !`}</h1>
-              <button onClick={() => socket.emit('room:leave')}>Retour au lobby</button>
-            </div>
-          </div>
-        )}
+        <AnimatePresence>
+          {gameState.phase === 'finished' && (
+            <motion.div
+              className="overlay endgame-overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <div className="confetti-container" aria-hidden>
+                {Array.from({ length: 50 }, (_, i) => (
+                  <div
+                    key={i}
+                    className="confetti-piece"
+                    style={{
+                      '--x': `${Math.random() * 100}vw`,
+                      '--delay': `${Math.random() * 2}s`,
+                      '--drift': `${(Math.random() - 0.5) * 200}px`,
+                      '--size': `${6 + Math.random() * 8}px`,
+                      '--color': ['#e94560','#4ecdc4','#f1c40f','#3498db','#9b59b6','#2ecc71','#ff6b81'][i % 7],
+                    } as React.CSSProperties}
+                  />
+                ))}
+              </div>
+              <motion.div
+                className="winner-box"
+                initial={{ scale: 0.3, opacity: 0, y: 40 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 18, delay: 0.2 }}
+              >
+                <motion.div
+                  className="winner-trophy"
+                  initial={{ scale: 0, rotate: -30 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 15, delay: 0.5 }}
+                >
+                  {gameState.winnerId === myId ? '🏆' : '🎮'}
+                </motion.div>
+                <motion.h1
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.7, duration: 0.4 }}
+                >
+                  {gameState.winnerId === myId ? 'VICTOIRE !' : `${gameState.players.find(p => p.id === gameState.winnerId)?.name} a gagne !`}
+                </motion.h1>
+                <motion.p
+                  className="winner-sub"
+                  initial={{ y: 15, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.9, duration: 0.4 }}
+                >
+                  {gameState.winnerId === myId
+                    ? 'Tu as complete 3 sets de proprietes !'
+                    : 'Partie terminee — bien joue !'}
+                </motion.p>
+                <motion.button
+                  initial={{ y: 15, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 1.1, duration: 0.4 }}
+                  onClick={() => socket.emit('room:leave')}
+                >
+                  Retour au lobby
+                </motion.button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="game-topbar">
           <span>{currentRoom?.name}</span>
@@ -399,6 +532,7 @@ export function Game() {
           </span>
         </div>
 
+        <LayoutGroup>
         <div className="board">
           {/* Opponents row */}
           <div className="board-opponents">
@@ -409,6 +543,7 @@ export function Game() {
                 isMe={false}
                 isActive={p.id === currentPlayer?.id}
                 targeting={targeting}
+                pendingAction={pendingAction}
                 onClickPlayer={() => handleTargetPlayer(p.id)}
                 onClickCard={handleTargetCard}
                 onClickSet={handleTargetSet}
@@ -432,9 +567,20 @@ export function Game() {
               </DropZone>
             </div>
             <div className="notif-log">
-              {notifications.slice(-4).map((msg, i) => (
-                <div key={i} className="notif">{msg}</div>
-              ))}
+              <AnimatePresence initial={false}>
+                {notifications.slice(-4).map((msg, i) => (
+                  <motion.div
+                    key={`${notifications.length - 4 + i}-${msg.slice(0, 20)}`}
+                    className="notif"
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    {msg}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
 
@@ -462,17 +608,29 @@ export function Game() {
               <DropZone id="drop-bank" className="my-zone my-bank-zone">
                 <h3>Banque ({me.bank.reduce((s, c) => s + c.value, 0)}M)</h3>
                 <div className="pa-bank-cards">
-                  {me.bank.map(c => (
-                    <span key={c.id} className="pa-bank-chip" title={`${displayName(c)} (${c.value}M)`}>
-                      {c.value}M
-                    </span>
-                  ))}
+                  <AnimatePresence>
+                    {me.bank.map((c, i) => (
+                      <motion.span
+                        key={c.id}
+                        layoutId={c.id}
+                        className="pa-bank-chip"
+                        title={`${displayName(c)} (${c.value}M)`}
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0, transition: { duration: 0.2 } }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                      >
+                        {c.value}M
+                      </motion.span>
+                    ))}
+                  </AnimatePresence>
                   {me.bank.length === 0 && <span className="pa-empty-small">Depose de l'argent ici</span>}
                 </div>
               </DropZone>
             </div>
           )}
         </div>
+        </LayoutGroup>
 
         {/* Targeting bar */}
         {targeting && (
@@ -494,23 +652,53 @@ export function Game() {
           <PendingActionBar action={gameState.pendingAction} myId={myId!} me={me} />
         )}
 
-        {/* Selected card info */}
-        {selectedCard && !targeting && (
-          <div className="selected-card-info">
-            <strong>{displayName(selectedCard)}</strong>
-            <span className="card-desc">{selectedCard.description}</span>
-            <span className="card-val">Valeur : {selectedCard.value}M</span>
-          </div>
-        )}
+        {/* Selected card info / Discard banner */}
+        <AnimatePresence>
+          {selectedCard && !targeting && (
+            <motion.div
+              key="card-info"
+              className="selected-card-info"
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 30, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <strong>{displayName(selectedCard)}</strong>
+              <span className="card-desc">{selectedCard.description}</span>
+              <span className="card-val">Valeur : {selectedCard.value}M</span>
+            </motion.div>
+          )}
+          {isMyTurn && gameState.turnPhase === 'discard' && (
+            <motion.div
+              key="discard"
+              className="discard-banner"
+              initial={{ y: 30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 30, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+            >
+              <span className="discard-banner-icon">&#128465;</span>
+              <span>Defausse {hand.length - 7} carte{hand.length - 7 > 1 ? 's' : ''} — clique sur une carte pour la defausser</span>
+              <span className="discard-banner-count">{hand.length}/7</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Discard banner */}
-        {isMyTurn && gameState.turnPhase === 'discard' && (
-          <div className="discard-banner">
-            <span className="discard-banner-icon">&#128465;</span>
-            <span>Defausse {hand.length - 7} carte{hand.length - 7 > 1 ? 's' : ''} — clique sur une carte pour la defausser</span>
-            <span className="discard-banner-count">{hand.length}/7</span>
-          </div>
-        )}
+        {/* Action flash overlay */}
+        <AnimatePresence>
+          {actionFlash && (
+            <motion.div
+              key="action-flash"
+              className="action-flash-overlay"
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 1.5, opacity: 0 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+            >
+              {actionFlash}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Floating reactions */}
         <div className="floating-reactions">
@@ -565,13 +753,27 @@ export function Game() {
                   <button className="btn-sort" onClick={() => sortHand('value')}>Par valeur</button>
                 </div>
               )}
-              <div className="hand">
-                {hand.map((card, i) => (
-                  <CardInHand
-                    key={card.id}
-                    card={card}
-                    selected={swapMode === i || (swapMode === null && card.id === selectedCardId)}
-                    onClick={() => {
+              <div className={`hand ${reorderMode ? 'reorder-active' : ''}`}>
+                {reorderMode ? (
+                <SortableContext items={localHandOrder} strategy={horizontalListSortingStrategy}>
+                  {sortedHand.map(((card, i), i) => (
+                    <SortableCardInHand
+                      key={card.id}
+                      card={card}
+                      index={i}
+                      onClick={() => handleCardClick(card)}
+                    />
+                  ))}
+                </SortableContext>
+              ) : (
+                <AnimatePresence mode="popLayout">
+                  {sortedHand.map((card, i) => (
+                      <CardInHand
+                        key={card.id}
+                        card={card}
+                        index={i}
+                      selected={swapMode === i || (swapMode === null && card.id === selectedCardId)}
+                        onClick={() => {
                       if (swapMode !== null) {
                         if (swapMode === -1) {
                           setSwapMode(i);
@@ -585,11 +787,13 @@ export function Game() {
                       }
                       handleCardClick(card);
                     }}
-                    isDragDisabled={!isMyTurn || (gameState.turnPhase !== 'action' && gameState.turnPhase !== 'discard')}
-                    discardMode={isMyTurn && gameState.turnPhase === 'discard'}
-                  />
-                ))}
-                {hand.length === 0 && <div className="empty-text">Pas de cartes en main</div>}
+                        isDragDisabled={!isMyTurn || (gameState.turnPhase !== 'action' && gameState.turnPhase !== 'discard')}
+                        discardMode={isMyTurn && gameState.turnPhase === 'discard'}
+                      />
+                    ))}
+                  </AnimatePresence>
+              )}
+              {hand.length === 0 && <div className="empty-text">Pas de cartes en main</div>}
               </div>
             </>
           )}
@@ -597,7 +801,10 @@ export function Game() {
           <div className="action-bar">
             <div className="action-bar-left">
               <button className="btn-toggle-hand" onClick={() => setHandVisible(v => !v)}>
-                {handVisible ? 'Cacher la main' : `Voir la main (${hand.length})`}
+                {handVisible
+                ? <><span className="hide-mobile">Cacher la main</span><span className="show-mobile">Cacher</span></>
+                : <><span className="hide-mobile">Voir la main ({hand.length})</span><span className="show-mobile">Voir ({hand.length})</span></>
+              }
               </button>
               <button className="btn-chat-toggle" onClick={() => setChatOpen(v => !v)} title="Chat">
                 &#128172;
@@ -607,13 +814,22 @@ export function Game() {
               </button>
             </div>
 
-            {isMyTurn && gameState.turnPhase === 'draw' && (
+            {hand.length > 0 && (
+              <button
+                className={`btn-reorder ${reorderMode ? 'active' : ''}`}
+                onClick={toggleReorderMode}
+              >
+                {reorderMode ? 'Terminer' : 'Reorganiser'}
+              </button>
+            )}
+
+            {!reorderMode && isMyTurn && gameState.turnPhase === 'draw' && (
               <button className="btn-action" onClick={() => socket.emit('game:draw')}>
                 Piocher {hand.length === 0 ? '5' : '2'} cartes
               </button>
             )}
 
-            {isMyTurn && gameState.turnPhase === 'action' && selectedCard && !targeting && (
+            {!reorderMode && isMyTurn && gameState.turnPhase === 'action' && selectedCard && !targeting && (
               <QuickActions
                 card={selectedCard}
                 mySets={me?.propertySets || []}
@@ -624,7 +840,7 @@ export function Game() {
               />
             )}
 
-            {isMyTurn && gameState.turnPhase === 'action' && (
+            {!reorderMode && isMyTurn && gameState.turnPhase === 'action' && (
               <button className="btn-secondary" onClick={() => {
                 if (hand.length > 7 && gameState.actionsRemaining > 0) {
                   setShowDiscardConfirm(true);
@@ -695,7 +911,7 @@ export function Game() {
         )}
 
         <DragOverlay>
-          {draggedCard ? <CardGhost card={draggedCard} /> : null}
+          {!reorderMode && draggedCard ? <CardGhost card={draggedCard} /> : null}
         </DragOverlay>
       </div>
     </DndContext>

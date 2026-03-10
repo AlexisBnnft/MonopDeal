@@ -22,7 +22,6 @@ export function Game() {
 
   return (
     <div className="game-screen">
-      {/* Winner overlay */}
       {gameState.phase === 'finished' && (
         <div className="overlay">
           <div className="winner-box">
@@ -32,7 +31,6 @@ export function Game() {
         </div>
       )}
 
-      {/* Top bar */}
       <div className="game-topbar">
         <span>{currentRoom?.name}</span>
         <span>Tour {gameState.turnNumber}</span>
@@ -45,30 +43,41 @@ export function Game() {
       </div>
 
       <div className="game-body">
-        {/* Left: opponents */}
         <div className="game-left">
           {opponents.map(p => (
             <OpponentPanel key={p.id} player={p} isActive={p.id === currentPlayer?.id} />
           ))}
         </div>
 
-        {/* Center */}
         <div className="game-center">
-          <div className="piles">
-            <div className="pile draw-pile">
-              <div className="pile-label">Pioche</div>
-              <div className="pile-count">{gameState.drawPileCount}</div>
+          <div className="center-top-row">
+            <div className="piles">
+              <div className="pile draw-pile">
+                <div className="pile-label">Pioche</div>
+                <div className="pile-count">{gameState.drawPileCount}</div>
+              </div>
+              <div className="pile discard-pile">
+                <div className="pile-label">Defausse</div>
+                <div className="pile-count">{gameState.discardPile.length}</div>
+                {gameState.discardPile.length > 0 && (
+                  <div className="pile-top">{gameState.discardPile[gameState.discardPile.length - 1].name}</div>
+                )}
+              </div>
             </div>
-            <div className="pile discard-pile">
-              <div className="pile-label">Defausse</div>
-              <div className="pile-count">{gameState.discardPile.length}</div>
-              {gameState.discardPile.length > 0 && (
-                <div className="pile-top">{gameState.discardPile[gameState.discardPile.length - 1].name}</div>
-              )}
-            </div>
+
+            {me && (
+              <div className="my-bank">
+                <h3>Banque ({me.bank.reduce((s, c) => s + c.value, 0)}M)</h3>
+                <div className="bank-cards">
+                  {me.bank.map(c => (
+                    <span key={c.id} className="bank-card" title={c.description}>{c.name}</span>
+                  ))}
+                  {me.bank.length === 0 && <span className="empty-text">Vide</span>}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* My properties */}
           {me && (
             <div className="my-properties">
               <h3>Mes Proprietes ({me.propertySets.filter(s => s.isComplete).length}/3 sets complets)</h3>
@@ -81,20 +90,6 @@ export function Game() {
             </div>
           )}
 
-          {/* My bank */}
-          {me && (
-            <div className="my-bank">
-              <h3>Banque ({me.bank.reduce((s, c) => s + c.value, 0)}M)</h3>
-              <div className="bank-cards">
-                {me.bank.map(c => (
-                  <span key={c.id} className="bank-card" title={c.description}>{c.name}</span>
-                ))}
-                {me.bank.length === 0 && <span className="empty-text">Vide</span>}
-              </div>
-            </div>
-          )}
-
-          {/* Notifications */}
           <div className="notif-log">
             {notifications.slice(-5).map((msg, i) => (
               <div key={i} className="notif">{msg}</div>
@@ -103,25 +98,14 @@ export function Game() {
         </div>
       </div>
 
-      {/* Pending action response */}
       {pendingForMe && gameState.pendingAction && (
         <PendingActionBar action={gameState.pendingAction} myId={myId!} me={me!} />
       )}
 
-      {/* Card detail when selected */}
-      {selectedCard && (
-        <div className="selected-card-info">
-          <strong>{selectedCard.name}</strong>
-          <span className="card-desc">{selectedCard.description}</span>
-          <span className="card-val">Valeur : {selectedCard.value}M</span>
-        </div>
-      )}
-
-      {/* Player hand + actions */}
       <div className="player-area">
         <div className="hand">
           {hand.map((card) => (
-            <CardInHand
+            <GameCard
               key={card.id}
               card={card}
               selected={card.id === selectedCardId}
@@ -170,36 +154,189 @@ export function Game() {
   );
 }
 
-// ─── Sub-components ─────────────────────────────────────────────────────────
+// ─── Game Card (like real Monopoly Deal cards) ──────────────────────────────
 
-function CardInHand({ card, selected, onClick }: { card: AnyCard; selected: boolean; onClick: () => void }) {
-  const borderColor = card.type === 'money' ? '#4ecdc4'
-    : card.type === 'property' ? COLOR_HEX[card.color]
-    : card.type === 'property_wildcard' ? (card.colors === 'all' ? '#fff' : COLOR_HEX[card.colors[0]])
-    : card.type === 'rent' ? '#e74c3c'
-    : '#f39c12';
+function GameCard({ card, selected, onClick }: { card: AnyCard; selected: boolean; onClick: () => void }) {
+  if (card.type === 'property') return <PropertyCardView card={card} selected={selected} onClick={onClick} />;
+  if (card.type === 'property_wildcard') return <WildcardCardView card={card} selected={selected} onClick={onClick} />;
+  if (card.type === 'money') return <MoneyCardView card={card} selected={selected} onClick={onClick} />;
+  if (card.type === 'action') return <ActionCardView card={card} selected={selected} onClick={onClick} />;
+  if (card.type === 'rent') return <RentCardView card={card} selected={selected} onClick={onClick} />;
+  return null;
+}
+
+function PropertyCardView({ card, selected, onClick }: { card: AnyCard & { color: PropertyColor }; selected: boolean; onClick: () => void }) {
+  const rents = RENT_VALUES[card.color];
+  const setSize = SET_SIZE[card.color];
 
   return (
-    <div
-      className={`card-hand ${selected ? 'selected' : ''}`}
-      style={{ borderColor }}
-      onClick={onClick}
-      title={card.description}
-    >
-      <div className="card-name">{card.name}</div>
-      <div className="card-desc-mini">{card.description}</div>
-      <div className="card-bottom">
-        <span className="card-value">{card.value}M</span>
+    <div className={`game-card ${selected ? 'selected' : ''}`} onClick={onClick}>
+      <div className="gc-color-band" style={{ background: COLOR_HEX[card.color] }}>
+        <span className="gc-color-name">{COLOR_NAMES[card.color]}</span>
+        <span className="gc-set-size">{setSize} pour le set</span>
+      </div>
+      <div className="gc-body">
+        <div className="gc-title">{card.name}</div>
+        <div className="gc-rent-table">
+          {rents.map((r, i) => (
+            <div key={i} className="gc-rent-row">
+              <span className="gc-rent-dots">
+                {Array.from({ length: i + 1 }, (_, j) => (
+                  <span key={j} className="gc-dot" style={{ background: COLOR_HEX[card.color] }} />
+                ))}
+              </span>
+              <span className="gc-rent-val">{r}M</span>
+            </div>
+          ))}
+          <div className="gc-rent-row bonus-row">
+            <span>+ Maison</span><span className="gc-rent-val">+3M</span>
+          </div>
+          <div className="gc-rent-row bonus-row">
+            <span>+ Hotel</span><span className="gc-rent-val">+4M</span>
+          </div>
+        </div>
+      </div>
+      <div className="gc-footer">
+        <span className="gc-value">{card.value}M</span>
       </div>
     </div>
   );
 }
 
+function WildcardCardView({ card, selected, onClick }: { card: AnyCard & { colors: [PropertyColor, PropertyColor] | 'all'; currentColor: PropertyColor }; selected: boolean; onClick: () => void }) {
+  const isUniversal = card.colors === 'all';
+
+  return (
+    <div className={`game-card wildcard ${selected ? 'selected' : ''}`} onClick={onClick}>
+      {isUniversal ? (
+        <div className="gc-color-band gc-rainbow">
+          <span className="gc-color-name">JOKER</span>
+          <span className="gc-set-size">Toute couleur</span>
+        </div>
+      ) : (
+        <div className="gc-color-band gc-split">
+          <div className="gc-split-half" style={{ background: COLOR_HEX[card.colors[0]] }} />
+          <div className="gc-split-half" style={{ background: COLOR_HEX[card.colors[1]] }} />
+          <span className="gc-color-name gc-split-label">JOKER</span>
+        </div>
+      )}
+      <div className="gc-body">
+        <div className="gc-title">{card.name}</div>
+        <div className="gc-desc">{card.description}</div>
+        {!isUniversal && (
+          <div className="gc-wildcard-colors">
+            <div className="gc-wc-option" style={{ borderColor: COLOR_HEX[card.colors[0]] }}>
+              {COLOR_NAMES[card.colors[0]]}
+            </div>
+            <div className="gc-wc-option" style={{ borderColor: COLOR_HEX[card.colors[1]] }}>
+              {COLOR_NAMES[card.colors[1]]}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="gc-footer">
+        <span className="gc-value">{card.value}M</span>
+      </div>
+    </div>
+  );
+}
+
+function MoneyCardView({ card, selected, onClick }: { card: AnyCard; selected: boolean; onClick: () => void }) {
+  return (
+    <div className={`game-card money-card ${selected ? 'selected' : ''}`} onClick={onClick}>
+      <div className="gc-color-band gc-money-band">
+        <span className="gc-color-name">ARGENT</span>
+      </div>
+      <div className="gc-body gc-money-body">
+        <div className="gc-money-amount">{card.value}M</div>
+        <div className="gc-money-sub">Placer dans la banque</div>
+      </div>
+      <div className="gc-footer">
+        <span className="gc-value">{card.value}M</span>
+      </div>
+    </div>
+  );
+}
+
+function ActionCardView({ card, selected, onClick }: { card: AnyCard & { actionType: string }; selected: boolean; onClick: () => void }) {
+  const actionColors: Record<string, string> = {
+    pass_go: '#3498db',
+    deal_breaker: '#8e44ad',
+    just_say_no: '#e74c3c',
+    sly_deal: '#2ecc71',
+    forced_deal: '#e67e22',
+    debt_collector: '#1abc9c',
+    its_my_birthday: '#f1c40f',
+    house: '#27ae60',
+    hotel: '#c0392b',
+    double_the_rent: '#9b59b6',
+  };
+  const bg = actionColors[card.actionType] || '#f39c12';
+
+  return (
+    <div className={`game-card action-card ${selected ? 'selected' : ''}`} onClick={onClick}>
+      <div className="gc-color-band" style={{ background: bg }}>
+        <span className="gc-color-name">ACTION</span>
+      </div>
+      <div className="gc-body">
+        <div className="gc-title gc-action-title">{card.name}</div>
+        <div className="gc-desc">{card.description}</div>
+      </div>
+      <div className="gc-footer">
+        <span className="gc-value">{card.value}M</span>
+      </div>
+    </div>
+  );
+}
+
+function RentCardView({ card, selected, onClick }: { card: AnyCard & { colors: [PropertyColor, PropertyColor] | 'all' }; selected: boolean; onClick: () => void }) {
+  const isWild = card.colors === 'all';
+
+  return (
+    <div className={`game-card rent-card ${selected ? 'selected' : ''}`} onClick={onClick}>
+      {isWild ? (
+        <div className="gc-color-band gc-rainbow">
+          <span className="gc-color-name">LOYER</span>
+          <span className="gc-set-size">1 joueur au choix</span>
+        </div>
+      ) : (
+        <div className="gc-color-band gc-split">
+          <div className="gc-split-half" style={{ background: COLOR_HEX[card.colors[0]] }} />
+          <div className="gc-split-half" style={{ background: COLOR_HEX[card.colors[1]] }} />
+          <span className="gc-color-name gc-split-label">LOYER</span>
+        </div>
+      )}
+      <div className="gc-body">
+        <div className="gc-title">{card.name}</div>
+        <div className="gc-desc">{card.description}</div>
+        {!isWild && (
+          <div className="gc-rent-preview">
+            {card.colors.map(color => (
+              <div key={color} className="gc-rent-mini">
+                <div className="gc-rent-mini-label" style={{ color: COLOR_HEX[color] }}>{COLOR_NAMES[color]}</div>
+                <div className="gc-rent-mini-vals">
+                  {RENT_VALUES[color].map((r, i) => (
+                    <span key={i}>{i + 1}={r}M</span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="gc-footer">
+        <span className="gc-value">{card.value}M</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Property Set Display ───────────────────────────────────────────────────
+
 function PropertySetDisplay({ set, detailed }: { set: PropertySet; detailed?: boolean }) {
   const needed = SET_SIZE[set.color];
   const propCount = set.cards.filter(c => c.type === 'property' || c.type === 'property_wildcard').length;
 
-  // Calculate current rent
   const rentIdx = Math.min(propCount, RENT_VALUES[set.color].length) - 1;
   let currentRent = rentIdx >= 0 ? RENT_VALUES[set.color][rentIdx] : 0;
   if (set.hasHouse) currentRent += 3;
@@ -221,12 +358,24 @@ function PropertySetDisplay({ set, detailed }: { set: PropertySet; detailed?: bo
         {set.hasHouse && <div className="prop-bonus">+ Maison (+3M)</div>}
         {set.hasHotel && <div className="prop-bonus">+ Hotel (+4M)</div>}
       </div>
+      {/* Rent table on my sets */}
+      {detailed && (
+        <div className="prop-set-rents">
+          {RENT_VALUES[set.color].map((r, i) => (
+            <span key={i} className={`psr-val ${i + 1 <= propCount ? 'active' : ''}`}>
+              {i + 1}: {r}M
+            </span>
+          ))}
+        </div>
+      )}
       {detailed && set.isComplete && (
         <div className="set-complete-tag">SET COMPLET</div>
       )}
     </div>
   );
 }
+
+// ─── Opponent Panel ─────────────────────────────────────────────────────────
 
 function OpponentPanel({ player, isActive }: { player: Player; isActive: boolean }) {
   const completeSets = player.propertySets.filter(s => s.isComplete).length;
@@ -261,6 +410,8 @@ function OpponentPanel({ player, isActive }: { player: Player; isActive: boolean
   );
 }
 
+// ─── Card Actions ───────────────────────────────────────────────────────────
+
 function CardActions({ card, opponents, mySets, onPlay }: {
   card: AnyCard;
   opponents: Player[];
@@ -272,19 +423,16 @@ function CardActions({ card, opponents, mySets, onPlay }: {
 
   return (
     <div className="card-actions">
-      {/* Banker — toujours dispo */}
       <button className="btn-bank" onClick={() => onPlay({ asMoney: true })}>
         Banquer ({card.value}M)
       </button>
 
-      {/* Propriete */}
       {card.type === 'property' && (
         <button className="btn-action" onClick={() => onPlay({})}>
           Poser {card.name}
         </button>
       )}
 
-      {/* Wildcard */}
       {card.type === 'property_wildcard' && (
         <div className="action-group">
           {(card.colors === 'all'
@@ -299,7 +447,6 @@ function CardActions({ card, opponents, mySets, onPlay }: {
         </div>
       )}
 
-      {/* Actions */}
       {card.type === 'action' && card.actionType === 'pass_go' && (
         <button className="btn-action" onClick={() => onPlay({})}>Jouer (piocher 2)</button>
       )}
@@ -382,7 +529,6 @@ function CardActions({ card, opponents, mySets, onPlay }: {
         </div>
       )}
 
-      {/* Loyer */}
       {card.type === 'rent' && (
         <RentAction card={card} opponents={opponents} mySets={mySets} onPlay={onPlay} />
       )}
@@ -476,7 +622,6 @@ function RentAction({ card, opponents, mySets, onPlay }: {
 
   const isWild = card.colors === 'all';
 
-  // Show how much rent would be
   const selectedSet = color ? mySets.find(s => s.color === color) : null;
   let rentPreview = 0;
   if (selectedSet) {
@@ -510,6 +655,8 @@ function RentAction({ card, opponents, mySets, onPlay }: {
     </div>
   );
 }
+
+// ─── Pending Action Bar ─────────────────────────────────────────────────────
 
 function PendingActionBar({ action, myId, me }: { action: PendingAction; myId: string; me: Player }) {
   const [selectedPayment, setSelectedPayment] = useState<string[]>([]);

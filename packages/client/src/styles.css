@@ -17,7 +17,10 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* ─── Toast ────────────────────────────────────────────────────────── */
@@ -130,7 +133,7 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
    GAME SCREEN
    ═══════════════════════════════════════════════════════════════════════ */
 
-.game-screen { height: 100vh; display: flex; flex-direction: column; }
+.game-screen { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 
 .game-topbar {
   display: flex; justify-content: space-between; align-items: center;
@@ -520,21 +523,189 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
 }
 .winner-box h1 { color: var(--green); font-size: 2rem; margin-bottom: 20px; }
 
-/* ─── Responsive ───────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Tablet
+   ═══════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 768px) {
-  .game-left { width: 170px; padding: 8px; }
-  .game-card { min-width: 110px; max-width: 110px; height: 165px; }
+@media (max-width: 900px) {
+  .game-left { width: 180px; padding: 8px; }
+  .game-card { min-width: 115px; max-width: 115px; height: 172px; }
   .gc-title { font-size: 0.7rem; }
-  .gc-money-amount { font-size: 1.8rem; }
+  .gc-money-amount { font-size: 2rem; }
+  .prop-set { min-width: 120px; }
 }
 
-@media (max-width: 500px) {
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Mobile
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  body { overflow: auto; }
+
+  /* Lobby / Room */
+  .center-screen { padding: 30px 14px 30px; gap: 14px; }
+  .logo { font-size: 1.8rem; }
+  .panel { padding: 14px; }
+
+  /* Game screen: fully vertical */
+  .game-screen { height: 100dvh; }
+
+  .game-topbar {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+    gap: 4px;
+  }
+
+  /* Opponents as compact horizontal scroll strip */
   .game-body { flex-direction: column; }
   .game-left {
-    width: 100%; flex-direction: row; overflow-x: auto; overflow-y: hidden;
-    border-right: none; border-bottom: 1px solid var(--bg3);
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--bg3);
+    padding: 6px 8px;
+    gap: 6px;
+    flex-shrink: 0;
+    scrollbar-width: none;
   }
-  .opponent { min-width: 150px; }
-  .game-card { min-width: 100px; max-width: 100px; height: 150px; }
+  .game-left::-webkit-scrollbar { display: none; }
+
+  .opponent {
+    min-width: 130px;
+    max-width: 130px;
+    padding: 6px 8px;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+  .opp-header { font-size: 0.75rem; margin-bottom: 2px; }
+  .opp-info { font-size: 0.65rem; margin-bottom: 3px; }
+  .opp-sets { gap: 2px; }
+  .opp-set-pill { font-size: 0.5rem; padding: 1px 4px; }
+
+  /* Center content: scrollable, compact */
+  .game-center {
+    padding: 10px;
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .center-top-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .piles { gap: 10px; }
+  .pile { width: 65px; height: 90px; }
+  .pile-count { font-size: 1.4rem; }
+  .pile-label { font-size: 0.6rem; }
+
+  .my-bank h3 { font-size: 0.75rem; }
+  .bank-card { font-size: 0.7rem; padding: 3px 8px; }
+
+  /* Properties: smaller sets */
+  .property-sets { gap: 6px; }
+  .prop-set { min-width: 110px; max-width: 160px; }
+  .prop-set-header { padding: 3px 6px; font-size: 0.65rem; }
+  .rent-badge { font-size: 0.55rem; padding: 1px 5px; }
+  .prop-card-mini { font-size: 0.65rem; }
+  .prop-set-rents { padding: 3px 6px 4px; }
+  .psr-val { font-size: 0.55rem; }
+  .set-complete-tag { font-size: 0.55rem; }
+
+  .notif-log { margin-top: 0; }
+  .notif { font-size: 0.65rem; }
+
+  /* Cards in hand — smaller but still readable */
+  .player-area { padding: 8px 10px; }
+
+  .hand {
+    gap: 8px;
+    justify-content: flex-start;
+    padding-bottom: 6px;
+    scrollbar-width: none;
+  }
+  .hand::-webkit-scrollbar { display: none; }
+
+  .game-card {
+    min-width: 105px;
+    max-width: 105px;
+    height: 158px;
+    border-radius: 8px;
+    border-width: 2px;
+  }
+  .game-card:hover { transform: translateY(-8px); }
+  .game-card.selected { transform: translateY(-14px); }
+
+  .gc-color-band { padding: 4px 7px 3px; }
+  .gc-color-name { font-size: 0.6rem; }
+  .gc-set-size { font-size: 0.5rem; }
+  .gc-split { height: 24px; }
+  .gc-split-label { font-size: 0.55rem; }
+
+  .gc-body { padding: 4px 7px; gap: 2px; }
+  .gc-title { font-size: 0.7rem; }
+  .gc-action-title { font-size: 0.65rem; }
+  .gc-desc { font-size: 0.5rem; line-height: 1.2; }
+
+  .gc-rent-row { font-size: 0.5rem; }
+  .gc-rent-row.bonus-row { font-size: 0.45rem; }
+  .gc-dot { width: 6px; height: 6px; }
+  .gc-rent-val { font-size: 0.55rem; }
+
+  .gc-money-amount { font-size: 1.8rem; }
+  .gc-money-sub { font-size: 0.5rem; }
+
+  .gc-wc-option { font-size: 0.5rem; padding: 2px; }
+  .gc-rent-mini-label { font-size: 0.5rem; }
+  .gc-rent-mini-vals { font-size: 0.45rem; gap: 4px; }
+
+  .gc-footer { padding: 2px 7px 3px; }
+  .gc-value { font-size: 0.75rem; padding: 0 5px; }
+
+  /* Action bar */
+  .action-bar {
+    margin-top: 6px;
+    gap: 6px;
+    font-size: 0.85rem;
+  }
+  .action-bar button { padding: 8px 14px; font-size: 0.8rem; }
+  .action-group select { max-width: 130px; padding: 6px 8px; font-size: 0.8rem; }
+  .card-actions { gap: 6px; }
+  .btn-color { padding: 5px 10px; font-size: 0.7rem; }
+
+  /* Pending bar */
+  .pending-bar { padding: 10px 12px; }
+  .pending-info { font-size: 0.85rem; margin-bottom: 6px; }
+  .payment-card { padding: 5px 8px; font-size: 0.7rem; }
+  .payment-total { font-size: 0.75rem; }
+
+  /* Overlay */
+  .winner-box { padding: 30px 30px; }
+  .winner-box h1 { font-size: 1.5rem; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RESPONSIVE — Very small screens (iPhone SE, etc.)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 380px) {
+  .game-card {
+    min-width: 90px;
+    max-width: 90px;
+    height: 135px;
+  }
+  .gc-title { font-size: 0.6rem; }
+  .gc-desc { font-size: 0.45rem; }
+  .gc-rent-row { font-size: 0.45rem; }
+  .gc-dot { width: 5px; height: 5px; }
+  .gc-money-amount { font-size: 1.5rem; }
+  .gc-footer { display: none; }
+
+  .opponent { min-width: 110px; max-width: 110px; }
+  .prop-set { min-width: 100px; }
+
+  .action-bar button { padding: 6px 10px; font-size: 0.75rem; }
 }

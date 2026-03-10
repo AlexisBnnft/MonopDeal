@@ -8,6 +8,7 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "dev:server": "npm run dev --workspace=packages/server",
-    "dev:client": "npm run dev --workspace=packages/client"
+    "dev:client": "npm run dev --workspace=packages/client",
+    "test:ui": "bash scripts/dev-test.sh"
   }
 }

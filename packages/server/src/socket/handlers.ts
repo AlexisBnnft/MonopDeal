@@ -165,6 +165,43 @@ export function registerHandlers(io: IO, socket: TypedSocket) {
     broadcastState(io, roomId);
   });
 
+  // ─── Chat Events ───────────────────────────────────────────────────
+
+  socket.on('chat:message', ({ text }) => {
+    const roomId = roomManager.getRoomIdForSocket(socket.id);
+    if (!roomId) return;
+    const roomInfo = roomManager.getRoomInfo(roomId);
+    if (!roomInfo) return;
+    const player = roomInfo.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    const trimmed = text.trim().slice(0, 200);
+    if (!trimmed) return;
+
+    io.to(roomId).emit('chat:message', {
+      id: `${Date.now()}-${socket.id}`,
+      playerName: player.name,
+      playerId: socket.id,
+      text: trimmed,
+      timestamp: Date.now(),
+    });
+  });
+
+  socket.on('chat:reaction', ({ emoji }) => {
+    const roomId = roomManager.getRoomIdForSocket(socket.id);
+    if (!roomId) return;
+    const roomInfo = roomManager.getRoomInfo(roomId);
+    if (!roomInfo) return;
+    const player = roomInfo.players.find(p => p.id === socket.id);
+    if (!player) return;
+
+    io.to(roomId).emit('chat:reaction', {
+      playerName: player.name,
+      playerId: socket.id,
+      emoji,
+    });
+  });
+
   // ─── Disconnect ─────────────────────────────────────────────────────
 
   socket.on('disconnect', () => handleLeave(io, socket));

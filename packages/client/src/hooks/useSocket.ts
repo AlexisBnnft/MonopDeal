@@ -6,6 +6,7 @@ export function useSocket() {
   const {
     setConnected, setRooms, setCurrentRoom,
     setGameState, setHand, addNotification, setError,
+    addChatMessage, addFloatingReaction, removeFloatingReaction,
   } = useStore();
 
   useEffect(() => {
@@ -39,6 +40,11 @@ export function useSocket() {
     socket.on('game:hand', (hand) => setHand(hand));
     socket.on('game:notification', (msg) => addNotification(msg));
     socket.on('error', (msg) => setError(msg));
+
+    socket.on('chat:message', (msg) => addChatMessage(msg));
+    socket.on('chat:reaction', (reaction) => {
+      addFloatingReaction(reaction);
+    });
 
     return () => {
       socket.removeAllListeners();

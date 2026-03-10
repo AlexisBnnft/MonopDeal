@@ -197,6 +197,22 @@ export interface RoomInfo {
 
 // ─── Socket Events ────────────────────────────────────────────────────────────
 
+export interface ChatMessage {
+  id: string;
+  playerName: string;
+  playerId: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface ReactionEvent {
+  playerName: string;
+  playerId: string;
+  emoji: string;
+}
+
+export const REACTION_EMOJIS = ['😂', '💀', '🔥', '😤', '🤡', '👑', '💰', '😈', '🥲', '🫡', '💩', '🎉'] as const;
+
 export interface ClientEvents {
   'room:create': (data: { playerName: string; roomName: string }) => void;
   'room:join': (data: { playerName: string; roomId: string }) => void;
@@ -219,6 +235,8 @@ export interface ClientEvents {
   'game:respond': (data: { accept: boolean; paymentCardIds?: string[] }) => void;
   'game:rearrange': (data: { cardId: string; toColor: PropertyColor }) => void;
   'rooms:list': () => void;
+  'chat:message': (data: { text: string }) => void;
+  'chat:reaction': (data: { emoji: string }) => void;
 }
 
 export interface ServerEvents {
@@ -232,4 +250,6 @@ export interface ServerEvents {
   'game:hand': (hand: AnyCard[]) => void;
   'game:notification': (msg: string) => void;
   'error': (message: string) => void;
+  'chat:message': (msg: ChatMessage) => void;
+  'chat:reaction': (reaction: ReactionEvent) => void;
 }

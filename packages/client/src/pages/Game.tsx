@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   DndContext, DragOverlay,
   type DragStartEvent, type DragEndEvent,
@@ -7,7 +7,7 @@ import {
 import { socket } from '../socket/index.ts';
 import { useStore } from '../store/useStore.ts';
 import {
-  COLOR_HEX, COLOR_NAMES, RENT_VALUES, displayName,
+  COLOR_HEX, COLOR_NAMES, RENT_VALUES, displayName, REACTION_EMOJIS,
   type AnyCard, type PropertyColor, type PropertySet, type Player, type PendingAction,
 } from '@monopoly-deal/shared';
 import { CardInHand, CardGhost } from '../components/CardInHand.tsx';
@@ -18,7 +18,7 @@ import { TargetingOverlay, ColorPicker } from '../components/TargetingOverlay.ts
 import type { TargetingState, TargetingStep } from '../components/types.ts';
 
 export function Game() {
-  const { gameState, hand, notifications, currentRoom } = useStore();
+  const { gameState, hand, notifications, currentRoom, chatMessages, floatingReactions, removeFloatingReaction, reorderHand, sortHand } = useStore();
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [targeting, setTargeting] = useState<TargetingState | null>(null);
   const [draggedCard, setDraggedCard] = useState<AnyCard | null>(null);
@@ -29,6 +29,24 @@ export function Game() {
   } | null>(null);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [handVisible, setHandVisible] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [reactionBarOpen, setReactionBarOpen] = useState(false);
+  const [swapMode, setSwapMode] = useState<number | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, chatOpen]);
+
+  // Auto-remove floating reactions after 3s
+  useEffect(() => {
+    if (floatingReactions.length === 0) return;
+    const latest = floatingReactions[floatingReactions.length - 1];
+    const timer = setTimeout(() => removeFloatingReaction(latest.id), 3000);
+    return () => clearTimeout(timer);
+  }, [floatingReactions]);
 
 
   const sensors = useSensors(
@@ -185,6 +203,33 @@ export function Game() {
 
   function cancelTargeting() {
     setTargeting(null);
+  }
+
+  // ─── Chat ─────────────────────────────────────────────────────────
+
+  function sendChat() {
+    const text = chatInput.trim();
+    if (!text) return;
+    socket.emit('chat:message', { text });
+    setChatInput('');
+  }
+
+  function sendReaction(emoji: string) {
+    socket.emit('chat:reaction', { emoji });
+    setReactionBarOpen(false);
+  }
+
+  // ─── Hand swap ───────────────────────────────────────────────────
+
+  function handleHandCardClick(card: AnyCard, index: number) {
+    if (swapMode !== null) {
+      if (swapMode !== index) {
+        reorderHand(swapMode, index);
+      }
+      setSwapMode(null);
+      return;
+    }
+    handleCardClick(card);
   }
 
   // ─── Card click ────────────────────────────────────────────────────
@@ -467,28 +512,100 @@ export function Game() {
           </div>
         )}
 
+        {/* Floating reactions */}
+        <div className="floating-reactions">
+          {floatingReactions.map(r => (
+            <div key={r.id} className="floating-reaction" style={{ left: `${r.x}%` }}>
+              <span className="floating-emoji">{r.emoji}</span>
+              <span className="floating-name">{r.playerName}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Chat panel */}
+        {chatOpen && (
+          <div className="chat-panel">
+            <div className="chat-header">
+              <span>Chat</span>
+              <button className="chat-close" onClick={() => setChatOpen(false)}>&times;</button>
+            </div>
+            <div className="chat-messages">
+              {chatMessages.map(msg => (
+                <div key={msg.id} className={`chat-msg ${msg.playerId === myId ? 'chat-msg-mine' : ''}`}>
+                  <span className="chat-msg-name">{msg.playerName}</span>
+                  <span className="chat-msg-text">{msg.text}</span>
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="chat-input-row">
+              <input
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendChat()}
+                placeholder="Message..."
+                maxLength={200}
+              />
+              <button className="chat-send" onClick={sendChat}>&#9654;</button>
+            </div>
+          </div>
+        )}
+
         {/* Hand + actions */}
         <div className={`player-hand-area ${isMyTurn && gameState.turnPhase === 'discard' ? 'discard-mode' : ''}`}>
           {handVisible && (
-            <div className="hand">
-              {hand.map(card => (
-                <CardInHand
-                  key={card.id}
-                  card={card}
-                  selected={card.id === selectedCardId}
-                  onClick={() => handleCardClick(card)}
-                  isDragDisabled={!isMyTurn || (gameState.turnPhase !== 'action' && gameState.turnPhase !== 'discard')}
-                  discardMode={isMyTurn && gameState.turnPhase === 'discard'}
-                />
-              ))}
-              {hand.length === 0 && <div className="empty-text">Pas de cartes en main</div>}
-            </div>
+            <>
+              {hand.length > 1 && (
+                <div className="hand-sort-bar">
+                  <button className={`btn-sort ${swapMode !== null ? 'btn-sort-active' : ''}`} onClick={() => setSwapMode(swapMode !== null ? null : -1)} title="Cliquer deux cartes pour les echanger">
+                    &#8644; Deplacer
+                  </button>
+                  <button className="btn-sort" onClick={() => sortHand('type')}>Par type</button>
+                  <button className="btn-sort" onClick={() => sortHand('color')}>Par couleur</button>
+                  <button className="btn-sort" onClick={() => sortHand('value')}>Par valeur</button>
+                </div>
+              )}
+              <div className="hand">
+                {hand.map((card, i) => (
+                  <CardInHand
+                    key={card.id}
+                    card={card}
+                    selected={swapMode === i || (swapMode === null && card.id === selectedCardId)}
+                    onClick={() => {
+                      if (swapMode !== null) {
+                        if (swapMode === -1) {
+                          setSwapMode(i);
+                        } else if (swapMode !== i) {
+                          reorderHand(swapMode, i);
+                          setSwapMode(null);
+                        } else {
+                          setSwapMode(null);
+                        }
+                        return;
+                      }
+                      handleCardClick(card);
+                    }}
+                    isDragDisabled={!isMyTurn || (gameState.turnPhase !== 'action' && gameState.turnPhase !== 'discard')}
+                    discardMode={isMyTurn && gameState.turnPhase === 'discard'}
+                  />
+                ))}
+                {hand.length === 0 && <div className="empty-text">Pas de cartes en main</div>}
+              </div>
+            </>
           )}
 
           <div className="action-bar">
-            <button className="btn-toggle-hand" onClick={() => setHandVisible(v => !v)}>
-              {handVisible ? 'Cacher la main' : `Voir la main (${hand.length})`}
-            </button>
+            <div className="action-bar-left">
+              <button className="btn-toggle-hand" onClick={() => setHandVisible(v => !v)}>
+                {handVisible ? 'Cacher la main' : `Voir la main (${hand.length})`}
+              </button>
+              <button className="btn-chat-toggle" onClick={() => setChatOpen(v => !v)} title="Chat">
+                &#128172;
+              </button>
+              <button className="btn-reaction-toggle" onClick={() => setReactionBarOpen(v => !v)} title="Reactions">
+                &#128293;
+              </button>
+            </div>
 
             {isMyTurn && gameState.turnPhase === 'draw' && (
               <button className="btn-action" onClick={() => socket.emit('game:draw')}>
@@ -519,6 +636,25 @@ export function Game() {
               </button>
             )}
           </div>
+
+          {/* Reaction picker */}
+          {reactionBarOpen && (
+            <div className="reaction-bar">
+              {REACTION_EMOJIS.map(emoji => (
+                <button key={emoji} className="reaction-btn" onClick={() => sendReaction(emoji)}>
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Swap mode hint */}
+          {swapMode !== null && (
+            <div className="swap-hint">
+              {swapMode === -1 ? 'Clique sur la carte a deplacer' : 'Clique sur la destination'}
+              <button className="btn-sort" onClick={() => setSwapMode(null)}>Annuler</button>
+            </div>
+          )}
         </div>
 
         {/* Discard confirmation modal */}

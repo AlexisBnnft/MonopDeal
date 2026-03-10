@@ -46,7 +46,7 @@ export const COLOR_HEX: Record<PropertyColor, string> = {
   utility:    '#90EE90',
 };
 
-// French color names
+// French color names (for UI display)
 export const COLOR_NAMES: Record<PropertyColor, string> = {
   brown:      'Marron',
   blue:       'Bleu fonce',
@@ -69,6 +69,27 @@ export type ActionType =
   | 'sly_deal' | 'forced_deal' | 'debt_collector'
   | 'its_my_birthday' | 'house' | 'hotel'
   | 'double_the_rent';
+
+// English canonical names (internal) -> French display names (UI)
+export const DISPLAY_NAMES: Record<string, string> = {
+  'Pass Go':           'Passez par la case Depart',
+  'Deal Breaker':      'Rupture de transaction',
+  'Just Say No':       'Non !',
+  'Sly Deal':          'Vol de propriété',
+  'Forced Deal':       'Marché forcé',
+  'Debt Collector':    'Collecteur de dette',
+  "It's My Birthday":  "C'est votre anniversaire !",
+  'House':             'Maison',
+  'Hotel':             'Hôtel',
+  'Double the Rent':   'Loyer Double',
+  'Wild Rent':         'Loyer Ciblé',
+  'Property Wildcard': 'Joker Propriété',
+};
+
+export function displayName(card: AnyCard): string {
+  if (card.type === 'money') return `${card.value}M`;
+  return DISPLAY_NAMES[card.name] || card.name;
+}
 
 export interface CardBase {
   id: string;
@@ -109,7 +130,7 @@ export type AnyCard = MoneyCard | PropertyCard | WildcardCard | ActionCard | Ren
 
 export interface PropertySet {
   color: PropertyColor;
-  cards: AnyCard[]; // property + wildcards
+  cards: AnyCard[]; // property + wildcards + orphaned house/hotel
   hasHouse: boolean;
   hasHotel: boolean;
   isComplete: boolean;
@@ -129,19 +150,24 @@ export interface Player {
 export type GamePhase = 'waiting' | 'playing' | 'finished';
 export type TurnPhase = 'draw' | 'action' | 'discard' | 'waiting';
 
+export interface JsnChain {
+  lastPlayedBy: string;
+  awaitingCounterFrom: string;
+  actionCancelled: boolean;
+}
+
 export interface PendingAction {
   type: 'rent' | 'debt_collector' | 'its_my_birthday' | 'deal_breaker' | 'sly_deal' | 'forced_deal';
   sourcePlayerId: string;
   targetPlayerIds: string[];
   amount?: number;
+  baseAmount?: number;
   respondedPlayerIds: string[];
-  // For deal_breaker
   targetSetColor?: PropertyColor;
-  // For sly_deal
   targetCardId?: string;
-  // For forced_deal
   offeredCardId?: string;
   requestedCardId?: string;
+  jsnChain?: JsnChain;
 }
 
 export interface GameState {
@@ -185,10 +211,12 @@ export interface ClientEvents {
     targetCardId?: string;
     offeredCardId?: string;
     targetSetColor?: PropertyColor;
+    doubleTheRentCardIds?: string[];
   }) => void;
   'game:end-turn': () => void;
   'game:discard': (data: { cardIds: string[] }) => void;
   'game:respond': (data: { accept: boolean; paymentCardIds?: string[] }) => void;
+  'game:rearrange': (data: { cardId: string; toColor: PropertyColor }) => void;
   'rooms:list': () => void;
 }
 

@@ -82,7 +82,22 @@ export function registerHandlers(io: IO, socket: TypedSocket) {
       targetCardId: data.targetCardId,
       offeredCardId: data.offeredCardId,
       targetSetColor: data.targetSetColor,
+      doubleTheRentCardIds: data.doubleTheRentCardIds,
     });
+    if (result.error) {
+      socket.emit('error', result.error);
+      return;
+    }
+    broadcastState(io, roomId);
+  });
+
+  socket.on('game:rearrange', ({ cardId, toColor }) => {
+    const roomId = roomManager.getRoomIdForSocket(socket.id);
+    if (!roomId) return;
+    const game = roomManager.getGame(roomId);
+    if (!game) return;
+
+    const result = game.rearrange(socket.id, cardId, toColor);
     if (result.error) {
       socket.emit('error', result.error);
       return;
@@ -146,7 +161,6 @@ function handleLeave(io: IO, socket: TypedSocket) {
 
   if (result.room) {
     io.to(result.roomId).emit('room:updated', result.room);
-    // Broadcast updated game state if game is running
     const game = roomManager.getGame(result.roomId);
     if (game) broadcastState(io, result.roomId);
   }
@@ -158,18 +172,14 @@ function broadcastState(io: IO, roomId: string) {
   if (!game) return;
 
   const state = game.getState();
-
-  // Send game state to all players
   io.to(roomId).emit('game:state', state);
 
-  // Send each player their hand privately
   for (const player of state.players) {
     const hand = game.getHand(player.id);
     const playerSocket = io.sockets.sockets.get(player.id);
     playerSocket?.emit('game:hand', hand);
   }
 
-  // Send notification
   if (state.lastAction) {
     io.to(roomId).emit('game:notification', state.lastAction);
   }

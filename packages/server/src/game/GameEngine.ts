@@ -2,7 +2,7 @@ import {
   SET_SIZE, RENT_VALUES,
   type AnyCard, type PropertyColor, type Player, type PropertySet,
   type GameState, type PendingAction, type TurnPhase, type WildcardCard,
-  type ActionType,
+  type ActionType, type JsnChain,
 } from '@monopoly-deal/shared';
 import { buildDeck, shuffleDeck } from './deck.js';
 
@@ -13,6 +13,7 @@ interface PlayCardOpts {
   targetCardId?: string;
   offeredCardId?: string;
   targetSetColor?: PropertyColor;
+  doubleTheRentCardIds?: string[];
 }
 
 export class GameEngine {
@@ -44,7 +45,6 @@ export class GameEngine {
       this.properties.set(p.id, []);
     }
 
-    // Deal 5 cards to each player
     for (const p of players) {
       for (let i = 0; i < 5; i++) {
         this.drawCard(p.id, false);
@@ -62,12 +62,13 @@ export class GameEngine {
     if (this.playerOrder[this.currentPlayerIndex] !== playerId) return { error: 'Not your turn' };
     if (this.turnPhase !== 'draw') return { error: 'Already drew cards this turn' };
 
-    const drawn = this.drawCards(playerId, 2);
+    // Fix 2: draw 5 when hand empty at start of turn
+    const handSize = this.hands.get(playerId)!.length;
+    const drawCount = handSize === 0 ? 5 : 2;
+    const drawn = this.drawCards(playerId, drawCount);
     this.turnPhase = 'action';
     this.actionsRemaining = 3;
     this.lastAction = `${this.getName(playerId)} drew ${drawn} cards`;
-
-    // If hand is empty at start of turn (edge case), they still draw
     return {};
   }
 
@@ -83,8 +84,11 @@ export class GameEngine {
     if (cardIndex === -1) return { error: 'Card not in hand' };
     const card = hand[cardIndex];
 
-    // Any card can be banked as money
+    // Fix 4: property cards cannot be banked
     if (opts.asMoney) {
+      if (card.type === 'property' || card.type === 'property_wildcard') {
+        return { error: 'Property cards cannot be banked' };
+      }
       hand.splice(cardIndex, 1);
       this.banks.get(playerId)!.push(card);
       this.actionsRemaining--;
@@ -95,7 +99,6 @@ export class GameEngine {
 
     switch (card.type) {
       case 'money':
-        // Money can only be banked
         hand.splice(cardIndex, 1);
         this.banks.get(playerId)!.push(card);
         this.actionsRemaining--;
@@ -145,7 +148,8 @@ export class GameEngine {
     const hand = this.hands.get(playerId)!;
     if (hand.length > 7) {
       this.turnPhase = 'discard';
-      return { error: `Must discard down to 7 cards (you have ${hand.length})` };
+      this.lastAction = `${this.getName(playerId)} must discard ${hand.length - 7} card(s)`;
+      return {};
     }
 
     this.advanceTurn();
@@ -154,6 +158,7 @@ export class GameEngine {
 
   discard(playerId: string, cardIds: string[]): { error?: string } {
     if (this.playerOrder[this.currentPlayerIndex] !== playerId) return { error: 'Not your turn' };
+    if (this.turnPhase !== 'discard') return { error: 'Not in discard phase' };
 
     const hand = this.hands.get(playerId)!;
     for (const id of cardIds) {
@@ -164,7 +169,8 @@ export class GameEngine {
     }
 
     if (hand.length > 7) {
-      return { error: `Still have ${hand.length} cards, need 7 or fewer` };
+      this.lastAction = `${this.getName(playerId)} discarded ${cardIds.length} card(s), ${hand.length - 7} more to go`;
+      return {};
     }
 
     this.lastAction = `${this.getName(playerId)} discarded ${cardIds.length} card(s)`;
@@ -172,58 +178,104 @@ export class GameEngine {
     return {};
   }
 
+  // Fix 6: JSN chain + Fix 15: minimum payment enforcement
   respond(playerId: string, accept: boolean, paymentCardIds?: string[]): { error?: string } {
     if (!this.pendingAction) return { error: 'No pending action' };
-    if (!this.pendingAction.targetPlayerIds.includes(playerId)) return { error: 'Not your action to respond to' };
-    if (this.pendingAction.respondedPlayerIds.includes(playerId)) return { error: 'Already responded' };
 
-    // Just Say No
+    const pa = this.pendingAction;
+
+    // Handle JSN chain counter-response
+    if (pa.jsnChain && pa.jsnChain.awaitingCounterFrom === playerId) {
+      if (!accept) {
+        if (pa.jsnChain.actionCancelled) {
+          const targetId = pa.jsnChain.lastPlayedBy;
+          if (!pa.respondedPlayerIds.includes(targetId)) {
+            pa.respondedPlayerIds.push(targetId);
+          }
+          pa.jsnChain = undefined;
+          this.lastAction = `${this.getName(playerId)} declines to counter`;
+          if (this.allTargetsResponded()) {
+            this.pendingAction = null;
+          }
+        } else {
+          pa.jsnChain = undefined;
+          this.lastAction = `${this.getName(playerId)} declines to counter — action stands`;
+        }
+        return {};
+      }
+
+      const hand = this.hands.get(playerId)!;
+      const jsnIdx = hand.findIndex(c => c.type === 'action' && c.actionType === 'just_say_no');
+      if (jsnIdx === -1) return { error: 'You need a Just Say No card to counter' };
+      const [jsnCard] = hand.splice(jsnIdx, 1);
+      this.discardPile.push(jsnCard);
+
+      pa.jsnChain = {
+        lastPlayedBy: playerId,
+        awaitingCounterFrom: pa.jsnChain.lastPlayedBy,
+        actionCancelled: !pa.jsnChain.actionCancelled,
+      };
+      this.lastAction = `${this.getName(playerId)} countered with Just Say No!`;
+      return {};
+    }
+
+    if (!pa.targetPlayerIds.includes(playerId)) return { error: 'Not your action to respond to' };
+    if (pa.respondedPlayerIds.includes(playerId)) return { error: 'Already responded' };
+
+    // Just Say No — starts chain
     if (!accept) {
       const hand = this.hands.get(playerId)!;
       const jsn = hand.findIndex(c => c.type === 'action' && c.actionType === 'just_say_no');
       if (jsn === -1) return { error: 'You need a Just Say No card to refuse' };
-      hand.splice(jsn, 1);
-      this.pendingAction.respondedPlayerIds.push(playerId);
-      this.lastAction = `${this.getName(playerId)} said Just Say No!`;
+      const [jsnCard] = hand.splice(jsn, 1);
+      this.discardPile.push(jsnCard);
 
-      // Check if all targets responded
-      if (this.allTargetsResponded()) {
-        this.pendingAction = null;
-      }
+      pa.jsnChain = {
+        lastPlayedBy: playerId,
+        awaitingCounterFrom: pa.sourcePlayerId,
+        actionCancelled: true,
+      };
+      this.lastAction = `${this.getName(playerId)} said Just Say No!`;
       return {};
     }
 
     // Accept the action
-    const pa = this.pendingAction;
     switch (pa.type) {
       case 'rent':
       case 'debt_collector':
       case 'its_my_birthday': {
         if (!paymentCardIds || paymentCardIds.length === 0) {
-          // Check if player has nothing to pay with
           const total = this.getPlayerTotalValue(playerId);
           if (total === 0) {
-            this.pendingAction.respondedPlayerIds.push(playerId);
+            pa.respondedPlayerIds.push(playerId);
             this.lastAction = `${this.getName(playerId)} has nothing to pay`;
             break;
           }
           return { error: 'Must select cards to pay with' };
         }
+
+        // Fix 15: validate minimum payment
+        const paymentValue = this.calculateCardValues(playerId, paymentCardIds);
+        if (paymentValue.error) return paymentValue;
+        const totalOnTable = this.getPlayerTotalValue(playerId);
+        if (paymentValue.total! < pa.amount! && paymentValue.total! < totalOnTable) {
+          return { error: 'You must pay as much as you can' };
+        }
+
         const result = this.processPayment(playerId, pa.sourcePlayerId, paymentCardIds, pa.amount!);
         if (result.error) return result;
-        this.pendingAction.respondedPlayerIds.push(playerId);
+        pa.respondedPlayerIds.push(playerId);
         this.lastAction = `${this.getName(playerId)} paid $${result.paid}M`;
         break;
       }
 
       case 'deal_breaker': {
-        // Transfer the complete set
         const targetSets = this.properties.get(playerId)!;
         const setIdx = targetSets.findIndex(s => s.color === pa.targetSetColor && s.isComplete);
         if (setIdx === -1) return { error: 'Set not found' };
         const [stolen] = targetSets.splice(setIdx, 1);
         this.properties.get(pa.sourcePlayerId)!.push(stolen);
-        this.pendingAction.respondedPlayerIds.push(playerId);
+        pa.respondedPlayerIds.push(playerId);
         this.lastAction = `${this.getName(pa.sourcePlayerId)} stole ${this.getName(playerId)}'s ${pa.targetSetColor} set!`;
         this.checkWin(pa.sourcePlayerId);
         break;
@@ -235,7 +287,7 @@ export class GameEngine {
         const color = stolen.type === 'property' ? stolen.color
           : (stolen as WildcardCard).currentColor;
         this.addPropertyToSets(pa.sourcePlayerId, stolen, color);
-        this.pendingAction.respondedPlayerIds.push(playerId);
+        pa.respondedPlayerIds.push(playerId);
         this.lastAction = `${this.getName(pa.sourcePlayerId)} stole ${stolen.name} from ${this.getName(playerId)}`;
         this.checkWin(pa.sourcePlayerId);
         break;
@@ -254,7 +306,7 @@ export class GameEngine {
 
         this.addPropertyToSets(pa.sourcePlayerId, stolen, stolenColor);
         this.addPropertyToSets(playerId, given, givenColor);
-        this.pendingAction.respondedPlayerIds.push(playerId);
+        pa.respondedPlayerIds.push(playerId);
         this.lastAction = `${this.getName(pa.sourcePlayerId)} swapped properties with ${this.getName(playerId)}`;
         this.checkWin(pa.sourcePlayerId);
         break;
@@ -265,6 +317,44 @@ export class GameEngine {
       this.pendingAction = null;
     }
 
+    return {};
+  }
+
+  // Fix 10: rearrange wildcards between sets (free, no action cost)
+  rearrange(playerId: string, cardId: string, toColor: PropertyColor): { error?: string } {
+    if (this.winnerId) return { error: 'Game is over' };
+    if (this.playerOrder[this.currentPlayerIndex] !== playerId) return { error: 'Not your turn' };
+    if (this.turnPhase !== 'action' && this.turnPhase !== 'draw') return { error: 'Can only rearrange during your turn' };
+
+    const sets = this.properties.get(playerId)!;
+    let sourceSet: PropertySet | undefined;
+    let cardIdx = -1;
+
+    for (const s of sets) {
+      const idx = s.cards.findIndex(c => c.id === cardId);
+      if (idx !== -1) { sourceSet = s; cardIdx = idx; break; }
+    }
+
+    if (!sourceSet || cardIdx === -1) return { error: 'Card not found in your properties' };
+    const card = sourceSet.cards[cardIdx];
+    if (card.type !== 'property_wildcard') return { error: 'Only wildcards can be rearranged' };
+    const wc = card as WildcardCard;
+    if (wc.colors !== 'all' && !wc.colors.includes(toColor)) return { error: 'Invalid color for this wildcard' };
+    if (sourceSet.color === toColor) return { error: 'Already in that color set' };
+
+    sourceSet.cards.splice(cardIdx, 1);
+    const srcPropCount = sourceSet.cards.filter(c => c.type === 'property' || c.type === 'property_wildcard').length;
+    sourceSet.isComplete = srcPropCount >= SET_SIZE[sourceSet.color];
+    if (!sourceSet.isComplete) { sourceSet.hasHouse = false; sourceSet.hasHotel = false; }
+    if (sourceSet.cards.length === 0) {
+      const idx = sets.indexOf(sourceSet);
+      if (idx !== -1) sets.splice(idx, 1);
+    }
+
+    wc.currentColor = toColor;
+    this.addPropertyToSets(playerId, wc, toColor);
+    this.lastAction = `${this.getName(playerId)} rearranged ${wc.name} to ${toColor}`;
+    this.checkWin(playerId);
     return {};
   }
 
@@ -288,11 +378,8 @@ export class GameEngine {
         this.discardPile.push(card);
         this.actionsRemaining--;
         this.pendingAction = {
-          type: 'debt_collector',
-          sourcePlayerId: playerId,
-          targetPlayerIds: [opts.targetPlayerId],
-          amount: 5,
-          respondedPlayerIds: [],
+          type: 'debt_collector', sourcePlayerId: playerId,
+          targetPlayerIds: [opts.targetPlayerId], amount: 5, respondedPlayerIds: [],
         };
         this.lastAction = `${this.getName(playerId)} demands $5M from ${this.getName(opts.targetPlayerId)}`;
         break;
@@ -304,11 +391,8 @@ export class GameEngine {
         this.actionsRemaining--;
         const others = this.playerOrder.filter(id => id !== playerId);
         this.pendingAction = {
-          type: 'its_my_birthday',
-          sourcePlayerId: playerId,
-          targetPlayerIds: others,
-          amount: 2,
-          respondedPlayerIds: [],
+          type: 'its_my_birthday', sourcePlayerId: playerId,
+          targetPlayerIds: others, amount: 2, respondedPlayerIds: [],
         };
         this.lastAction = `${this.getName(playerId)} says It's My Birthday! ($2M from everyone)`;
         break;
@@ -323,11 +407,8 @@ export class GameEngine {
         this.discardPile.push(card);
         this.actionsRemaining--;
         this.pendingAction = {
-          type: 'deal_breaker',
-          sourcePlayerId: playerId,
-          targetPlayerIds: [opts.targetPlayerId],
-          targetSetColor: opts.targetSetColor,
-          respondedPlayerIds: [],
+          type: 'deal_breaker', sourcePlayerId: playerId,
+          targetPlayerIds: [opts.targetPlayerId], targetSetColor: opts.targetSetColor, respondedPlayerIds: [],
         };
         this.lastAction = `${this.getName(playerId)} played Deal Breaker on ${this.getName(opts.targetPlayerId)}'s ${opts.targetSetColor} set!`;
         break;
@@ -335,20 +416,21 @@ export class GameEngine {
 
       case 'sly_deal': {
         if (!opts.targetPlayerId || !opts.targetCardId) return { error: 'Must select target player and card' };
-        // Can't steal from complete sets
         const targetSets = this.properties.get(opts.targetPlayerId)!;
         const targetSet = targetSets.find(s => s.cards.some(c => c.id === opts.targetCardId));
         if (!targetSet) return { error: 'Card not found in target properties' };
         if (targetSet.isComplete) return { error: "Can't steal from a complete set" };
+        // Fix 14: validate card type
+        const targetCard = targetSet.cards.find(c => c.id === opts.targetCardId)!;
+        if (targetCard.type !== 'property' && targetCard.type !== 'property_wildcard') {
+          return { error: 'Can only steal property cards' };
+        }
         hand.splice(cardIndex, 1);
         this.discardPile.push(card);
         this.actionsRemaining--;
         this.pendingAction = {
-          type: 'sly_deal',
-          sourcePlayerId: playerId,
-          targetPlayerIds: [opts.targetPlayerId],
-          targetCardId: opts.targetCardId,
-          respondedPlayerIds: [],
+          type: 'sly_deal', sourcePlayerId: playerId,
+          targetPlayerIds: [opts.targetPlayerId], targetCardId: opts.targetCardId, respondedPlayerIds: [],
         };
         this.lastAction = `${this.getName(playerId)} played Sly Deal on ${this.getName(opts.targetPlayerId)}`;
         break;
@@ -358,28 +440,42 @@ export class GameEngine {
         if (!opts.targetPlayerId || !opts.targetCardId || !opts.offeredCardId) {
           return { error: 'Must select target player, their card, and your offered card' };
         }
-        // Can't swap from complete sets
         const tSets = this.properties.get(opts.targetPlayerId)!;
         const tSet = tSets.find(s => s.cards.some(c => c.id === opts.targetCardId));
         if (!tSet) return { error: 'Card not found in target properties' };
         if (tSet.isComplete) return { error: "Can't swap from a complete set" };
+        // Fix 14: validate target card type
+        const tCard = tSet.cards.find(c => c.id === opts.targetCardId)!;
+        if (tCard.type !== 'property' && tCard.type !== 'property_wildcard') {
+          return { error: 'Can only swap property cards' };
+        }
+        // Fix 13: validate source card not in complete set
+        const mySets = this.properties.get(playerId)!;
+        const mySet = mySets.find(s => s.cards.some(c => c.id === opts.offeredCardId));
+        if (!mySet) return { error: 'Offered card not found in your properties' };
+        if (mySet.isComplete) return { error: "Can't swap from your complete set" };
+        const myCard = mySet.cards.find(c => c.id === opts.offeredCardId)!;
+        if (myCard.type !== 'property' && myCard.type !== 'property_wildcard') {
+          return { error: 'Can only swap property cards' };
+        }
         hand.splice(cardIndex, 1);
         this.discardPile.push(card);
         this.actionsRemaining--;
         this.pendingAction = {
-          type: 'forced_deal',
-          sourcePlayerId: playerId,
-          targetPlayerIds: [opts.targetPlayerId],
-          offeredCardId: opts.offeredCardId,
-          requestedCardId: opts.targetCardId,
-          respondedPlayerIds: [],
+          type: 'forced_deal', sourcePlayerId: playerId,
+          targetPlayerIds: [opts.targetPlayerId], offeredCardId: opts.offeredCardId,
+          requestedCardId: opts.targetCardId, respondedPlayerIds: [],
         };
         this.lastAction = `${this.getName(playerId)} played Forced Deal on ${this.getName(opts.targetPlayerId)}`;
         break;
       }
 
+      // Fix 5: block house/hotel on railroad/utility
       case 'house': {
         if (!opts.color) return { error: 'Must select which set to add house to' };
+        if (opts.color === 'railroad' || opts.color === 'utility') {
+          return { error: 'Cannot place House on Railroad or Utility sets' };
+        }
         const sets = this.properties.get(playerId)!;
         const set = sets.find(s => s.color === opts.color && s.isComplete && !s.hasHouse);
         if (!set) return { error: 'Need a complete set without a house' };
@@ -393,6 +489,9 @@ export class GameEngine {
 
       case 'hotel': {
         if (!opts.color) return { error: 'Must select which set to add hotel to' };
+        if (opts.color === 'railroad' || opts.color === 'utility') {
+          return { error: 'Cannot place Hotel on Railroad or Utility sets' };
+        }
         const sets = this.properties.get(playerId)!;
         const set = sets.find(s => s.color === opts.color && s.isComplete && s.hasHouse && !s.hasHotel);
         if (!set) return { error: 'Need a complete set with a house' };
@@ -405,10 +504,9 @@ export class GameEngine {
       }
 
       case 'double_the_rent':
-        return { error: 'Double The Rent must be played with a Rent card (play rent first, it auto-doubles)' };
+        return { error: 'Double the Rent must be played alongside a Rent card' };
 
       case 'just_say_no':
-        // Can be banked as money, but not played as action on its own
         return { error: 'Just Say No can only be used in response to actions against you (or bank it as money)' };
     }
 
@@ -416,6 +514,7 @@ export class GameEngine {
     return {};
   }
 
+  // Fix 9: DTR player-controlled + Fix 11: validation before card removal
   private playRent(playerId: string, cardIndex: number, card: AnyCard & { colors: [PropertyColor, PropertyColor] | 'all' }, opts: PlayCardOpts): { error?: string } {
     const hand = this.hands.get(playerId)!;
     const color = opts.color;
@@ -425,58 +524,60 @@ export class GameEngine {
       return { error: `This rent card can't be used for ${color}` };
     }
 
-    // Calculate rent
-    const sets = this.properties.get(playerId)!;
-    const set = sets.find(s => s.color === color);
-    if (!set || set.cards.length === 0) return { error: `You have no ${color} properties` };
-
-    const propertyCount = set.cards.filter(c =>
-      c.type === 'property' || c.type === 'property_wildcard'
-    ).length;
-    const rentIndex = Math.min(propertyCount, RENT_VALUES[color].length) - 1;
-    let rentAmount = RENT_VALUES[color][rentIndex] || 0;
-
-    // House adds 3M, Hotel adds 4M
-    if (set.hasHouse) rentAmount += 3;
-    if (set.hasHotel) rentAmount += 4;
-
-    // Check for Double The Rent in hand
-    const doubleIdx = hand.findIndex(c =>
-      c.id !== card.id && c.type === 'action' && c.actionType === 'double_the_rent'
-    );
-    if (doubleIdx !== -1 && this.actionsRemaining >= 2) {
-      // Auto-use double the rent
-      const [doubleCard] = hand.splice(doubleIdx > cardIndex ? doubleIdx : doubleIdx, 1);
-      this.discardPile.push(doubleCard);
-      rentAmount *= 2;
-      // Adjust cardIndex if needed
-      const newCardIndex = hand.findIndex(c => c.id === card.id);
-      hand.splice(newCardIndex, 1);
-      this.discardPile.push(card);
-      this.actionsRemaining -= 2;
-      this.lastAction = `${this.getName(playerId)} charged DOUBLE rent: $${rentAmount}M for ${color}!`;
-    } else {
-      hand.splice(cardIndex, 1);
-      this.discardPile.push(card);
-      this.actionsRemaining--;
-      this.lastAction = `${this.getName(playerId)} charged $${rentAmount}M rent for ${color}`;
-    }
-
-    // Wild rent targets one player, normal rent targets all
-    const targetIds = card.colors === 'all' && opts.targetPlayerId
-      ? [opts.targetPlayerId]
-      : this.playerOrder.filter(id => id !== playerId);
-
+    // Fix 11: validate wild rent target BEFORE card removal
     if (card.colors === 'all' && !opts.targetPlayerId) {
       return { error: 'Wild rent requires selecting a target player' };
     }
 
+    const sets = this.properties.get(playerId)!;
+    const set = sets.find(s => s.color === color);
+    if (!set || set.cards.length === 0) return { error: `You have no ${color} properties` };
+
+    const propertyCount = set.cards.filter(c => c.type === 'property' || c.type === 'property_wildcard').length;
+    const rentIndex = Math.min(propertyCount, RENT_VALUES[color].length) - 1;
+    let baseRent = RENT_VALUES[color][rentIndex] || 0;
+    if (set.hasHouse) baseRent += 3;
+    if (set.hasHotel) baseRent += 4;
+
+    // Fix 9: explicit DTR choice
+    const dtrIds = opts.doubleTheRentCardIds || [];
+    const totalActions = 1 + dtrIds.length;
+    if (totalActions > this.actionsRemaining) {
+      return { error: `Not enough actions: need ${totalActions}, have ${this.actionsRemaining}` };
+    }
+    for (const dtrId of dtrIds) {
+      const dtrCard = hand.find(c => c.id === dtrId && c.type === 'action' && c.actionType === 'double_the_rent');
+      if (!dtrCard) return { error: 'Double the Rent card not found in hand' };
+    }
+
+    // All validation passed — remove cards
+    hand.splice(cardIndex, 1);
+    this.discardPile.push(card);
+    for (const dtrId of dtrIds) {
+      const dtrIdx = hand.findIndex(c => c.id === dtrId);
+      if (dtrIdx !== -1) {
+        const [dtrCard] = hand.splice(dtrIdx, 1);
+        this.discardPile.push(dtrCard);
+      }
+    }
+
+    const multiplier = Math.pow(2, dtrIds.length);
+    const rentAmount = baseRent * multiplier;
+    this.actionsRemaining -= totalActions;
+
+    if (dtrIds.length > 0) {
+      this.lastAction = `${this.getName(playerId)} charged ${multiplier}x rent: $${rentAmount}M for ${color}!`;
+    } else {
+      this.lastAction = `${this.getName(playerId)} charged $${rentAmount}M rent for ${color}`;
+    }
+
+    const targetIds = card.colors === 'all' && opts.targetPlayerId
+      ? [opts.targetPlayerId]
+      : this.playerOrder.filter(id => id !== playerId);
+
     this.pendingAction = {
-      type: 'rent',
-      sourcePlayerId: playerId,
-      targetPlayerIds: targetIds,
-      amount: rentAmount,
-      respondedPlayerIds: [],
+      type: 'rent', sourcePlayerId: playerId,
+      targetPlayerIds: targetIds, amount: rentAmount, baseAmount: baseRent, respondedPlayerIds: [],
     };
 
     this.checkEndTurn(playerId);
@@ -506,51 +607,29 @@ export class GameEngine {
 
   private addPropertyToSets(playerId: string, card: AnyCard, color: PropertyColor) {
     const sets = this.properties.get(playerId)!;
-    // Find an incomplete set of this color
     let set = sets.find(s => s.color === color && !s.isComplete);
     if (!set) {
       set = { color, cards: [], hasHouse: false, hasHotel: false, isComplete: false };
       sets.push(set);
     }
     set.cards.push(card);
-    // Check if set is complete
-    const propCount = set.cards.filter(c =>
-      c.type === 'property' || c.type === 'property_wildcard'
-    ).length;
+    const propCount = set.cards.filter(c => c.type === 'property' || c.type === 'property_wildcard').length;
     set.isComplete = propCount >= SET_SIZE[color];
   }
 
+  // Fix 8: orphaned house/hotel stay on table
   private removePropertyCard(playerId: string, cardId: string): AnyCard | null {
     const sets = this.properties.get(playerId)!;
     for (let i = 0; i < sets.length; i++) {
       const cardIdx = sets[i].cards.findIndex(c => c.id === cardId);
       if (cardIdx !== -1) {
         const [card] = sets[i].cards.splice(cardIdx, 1);
-        // Recalculate completeness
-        const propCount = sets[i].cards.filter(c =>
-          c.type === 'property' || c.type === 'property_wildcard'
-        ).length;
+        const propCount = sets[i].cards.filter(c => c.type === 'property' || c.type === 'property_wildcard').length;
         sets[i].isComplete = propCount >= SET_SIZE[sets[i].color];
-        // Remove house/hotel if no longer complete
         if (!sets[i].isComplete) {
-          if (sets[i].hasHotel) {
-            sets[i].hasHotel = false;
-            const hotelIdx = sets[i].cards.findIndex(c => c.type === 'action' && (c as any).actionType === 'hotel');
-            if (hotelIdx !== -1) {
-              const [hotel] = sets[i].cards.splice(hotelIdx, 1);
-              this.hands.get(playerId)!.push(hotel);
-            }
-          }
-          if (sets[i].hasHouse) {
-            sets[i].hasHouse = false;
-            const houseIdx = sets[i].cards.findIndex(c => c.type === 'action' && (c as any).actionType === 'house');
-            if (houseIdx !== -1) {
-              const [house] = sets[i].cards.splice(houseIdx, 1);
-              this.hands.get(playerId)!.push(house);
-            }
-          }
+          sets[i].hasHouse = false;
+          sets[i].hasHotel = false;
         }
-        // Remove empty sets
         if (sets[i].cards.length === 0) {
           sets.splice(i, 1);
         }
@@ -560,42 +639,85 @@ export class GameEngine {
     return null;
   }
 
+  // Fix 7: property payments -> property area + Fix 12: block multicolor wildcard payment
   private processPayment(fromId: string, toId: string, cardIds: string[], amount: number): { error?: string; paid?: number } {
     let paid = 0;
     const fromBank = this.banks.get(fromId)!;
-    const fromSets = this.properties.get(fromId)!;
     const toBank = this.banks.get(toId)!;
 
     for (const id of cardIds) {
-      // Try bank first
-      let idx = fromBank.findIndex(c => c.id === id);
+      const idx = fromBank.findIndex(c => c.id === id);
       if (idx !== -1) {
         const [card] = fromBank.splice(idx, 1);
         toBank.push(card);
         paid += card.value;
         continue;
       }
-      // Try properties
-      const card = this.removePropertyCard(fromId, id);
-      if (card) {
-        toBank.push(card);
-        paid += card.value;
-        continue;
+
+      // Check for multicolor wildcard before removing
+      const propSets = this.properties.get(fromId)!;
+      let foundInProps = false;
+      for (const s of propSets) {
+        const cIdx = s.cards.findIndex(c => c.id === id);
+        if (cIdx !== -1) {
+          const c = s.cards[cIdx];
+          if (c.type === 'property_wildcard' && (c as WildcardCard).colors === 'all') {
+            return { error: 'Multicolor wildcards cannot be used for payment' };
+          }
+          foundInProps = true;
+          break;
+        }
       }
+
+      if (foundInProps) {
+        const card = this.removePropertyCard(fromId, id);
+        if (card) {
+          if (card.type === 'property' || card.type === 'property_wildcard') {
+            const color = card.type === 'property' ? card.color : (card as WildcardCard).currentColor;
+            this.addPropertyToSets(toId, card, color);
+          } else {
+            toBank.push(card);
+          }
+          paid += card.value;
+          continue;
+        }
+      }
+
       return { error: `Card ${id} not found in your bank or properties` };
     }
-
-    // No change given in Monopoly Deal — overpayment is the payer's loss
     return { paid };
+  }
+
+  private calculateCardValues(playerId: string, cardIds: string[]): { error?: string; total?: number } {
+    let total = 0;
+    const bank = this.banks.get(playerId)!;
+    const sets = this.properties.get(playerId)!;
+    for (const id of cardIds) {
+      const bankCard = bank.find(c => c.id === id);
+      if (bankCard) { total += bankCard.value; continue; }
+      let found = false;
+      for (const s of sets) {
+        const c = s.cards.find(c => c.id === id);
+        if (c) {
+          if (c.type === 'property_wildcard' && (c as WildcardCard).colors === 'all') {
+            return { error: 'Multicolor wildcards cannot be used for payment' };
+          }
+          total += c.value;
+          found = true;
+          break;
+        }
+      }
+      if (!found) return { error: `Card ${id} not found` };
+    }
+    return { total };
   }
 
   private getPlayerTotalValue(playerId: string): number {
     let total = 0;
-    for (const card of this.banks.get(playerId)!) {
-      total += card.value;
-    }
+    for (const card of this.banks.get(playerId)!) total += card.value;
     for (const set of this.properties.get(playerId)!) {
       for (const card of set.cards) {
+        if (card.type === 'property_wildcard' && (card as WildcardCard).colors === 'all') continue;
         total += card.value;
       }
     }
@@ -606,24 +728,20 @@ export class GameEngine {
     return this.playerNames.get(playerId) || playerId.slice(0, 6);
   }
 
+  // Fix 3: count total complete sets, not unique colors
   private checkWin(playerId: string) {
     const sets = this.properties.get(playerId)!;
     const completeSets = sets.filter(s => s.isComplete);
-    // Need 3 complete sets of DIFFERENT colors to win
-    const uniqueColors = new Set(completeSets.map(s => s.color));
-    if (uniqueColors.size >= 3) {
+    if (completeSets.length >= 3) {
       this.winnerId = playerId;
-      this.lastAction = `${this.getName(playerId)} WINS with 3 complete sets!`;
+      this.lastAction = `${this.getName(playerId)} WINS with ${completeSets.length} complete sets!`;
     }
   }
 
   private checkEndTurn(playerId: string) {
     if (this.actionsRemaining <= 0 && !this.pendingAction) {
       const hand = this.hands.get(playerId)!;
-      if (hand.length > 7) {
-        this.turnPhase = 'discard';
-      }
-      // Don't auto-advance — player must explicitly end turn
+      if (hand.length > 7) this.turnPhase = 'discard';
     }
   }
 
@@ -636,7 +754,6 @@ export class GameEngine {
 
   private advanceTurn() {
     this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.playerOrder.length;
-    // Skip disconnected players
     let attempts = 0;
     while (!this.playerConnected.get(this.playerOrder[this.currentPlayerIndex]) && attempts < this.playerOrder.length) {
       this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.playerOrder.length;
@@ -670,7 +787,7 @@ export class GameEngine {
       actionsRemaining: this.actionsRemaining,
       turnPhase: this.turnPhase,
       drawPileCount: this.drawPile.length,
-      discardPile: this.discardPile.slice(-3), // only show top 3
+      discardPile: this.discardPile.slice(-3),
       phase: this.winnerId ? 'finished' : 'playing',
       winnerId: this.winnerId,
       turnNumber: this.turnNumber,
@@ -679,14 +796,8 @@ export class GameEngine {
     };
   }
 
-  setDisconnected(playerId: string) {
-    this.playerConnected.set(playerId, false);
-  }
-
-  setConnected(playerId: string) {
-    this.playerConnected.set(playerId, true);
-  }
+  setDisconnected(playerId: string) { this.playerConnected.set(playerId, false); }
+  setConnected(playerId: string) { this.playerConnected.set(playerId, true); }
 }
 
-// Re-export shuffleDeck for deck building
 export { shuffleDeck } from './deck.js';

@@ -46,6 +46,20 @@ export const COLOR_HEX: Record<PropertyColor, string> = {
   utility:    '#90EE90',
 };
 
+// French color names
+export const COLOR_NAMES: Record<PropertyColor, string> = {
+  brown:      'Marron',
+  blue:       'Bleu fonce',
+  green:      'Vert',
+  light_blue: 'Bleu clair',
+  orange:     'Orange',
+  pink:       'Rose',
+  railroad:   'Gare',
+  red:        'Rouge',
+  yellow:     'Jaune',
+  utility:    'Service public',
+};
+
 // ─── Card Types ───────────────────────────────────────────────────────────────
 
 export type CardType = 'money' | 'property' | 'action' | 'rent' | 'property_wildcard';
@@ -60,6 +74,7 @@ export interface CardBase {
   id: string;
   type: CardType;
   name: string;
+  description: string;
   value: number; // bank value in M
 }
 

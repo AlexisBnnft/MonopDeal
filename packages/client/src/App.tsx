@@ -25,7 +25,7 @@ function NameEntry() {
   return (
     <div className="center-screen">
       <div className="logo">MONOPOLY DEAL</div>
-      <p className="subtitle">The card game</p>
+      <p className="subtitle">Le jeu de cartes</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -33,8 +33,8 @@ function NameEntry() {
           if (name.trim()) setPlayerName(name.trim());
         }}
       >
-        <input name="name" placeholder="Your name" maxLength={20} autoFocus autoComplete="off" />
-        <button type="submit">Play</button>
+        <input name="name" placeholder="Ton prenom" maxLength={20} autoFocus autoComplete="off" />
+        <button type="submit">Jouer</button>
       </form>
     </div>
   );

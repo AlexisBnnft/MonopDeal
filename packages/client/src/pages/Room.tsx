@@ -12,16 +12,16 @@ export function Room() {
     <div className="center-screen">
       <div className="logo-small">MONOPOLY DEAL</div>
       <h1>{currentRoom.name}</h1>
-      <p className="subtitle">Room Code: <strong className="code">{currentRoom.id}</strong></p>
+      <p className="subtitle">Code : <strong className="code">{currentRoom.id}</strong></p>
 
       <div className="panel">
-        <h2>Players ({currentRoom.players.length}/{currentRoom.maxPlayers})</h2>
+        <h2>Joueurs ({currentRoom.players.length}/{currentRoom.maxPlayers})</h2>
         <ul className="player-list">
           {currentRoom.players.map((p) => (
             <li key={p.id} className={p.connected ? '' : 'disconnected'}>
               {p.name}
-              {p.id === currentRoom.hostId && <span className="badge host">Host</span>}
-              {p.name === playerName && <span className="badge you">You</span>}
+              {p.id === currentRoom.hostId && <span className="badge host">Hote</span>}
+              {p.name === playerName && <span className="badge you">Toi</span>}
             </li>
           ))}
         </ul>
@@ -30,11 +30,11 @@ export function Room() {
       <div className="row center">
         {canStart && (
           <button className="btn-primary" onClick={() => socket.emit('game:start')}>
-            Start Game
+            Lancer la partie
           </button>
         )}
-        {isHost && !canStart && <p className="hint">Waiting for more players...</p>}
-        <button className="btn-secondary" onClick={() => socket.emit('room:leave')}>Leave</button>
+        {isHost && !canStart && <p className="hint">En attente de joueurs...</p>}
+        <button className="btn-secondary" onClick={() => socket.emit('room:leave')}>Quitter</button>
       </div>
     </div>
   );

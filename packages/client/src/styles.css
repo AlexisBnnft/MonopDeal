@@ -124,6 +124,25 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   color: white;
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
 }
+.btn-bank {
+  background: var(--bg3);
+  border: 2px solid var(--green);
+  color: var(--green);
+}
+.btn-bank:hover { background: rgba(78, 205, 196, 0.15); }
+
+.overpay { color: var(--accent); font-weight: 600; }
+
+.pile-top {
+  font-size: 0.6rem;
+  color: var(--dim);
+  margin-top: 4px;
+  text-align: center;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .row { display: flex; gap: 10px; width: 100%; align-items: center; }
 .row.center { justify-content: center; }
@@ -218,14 +237,17 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   font-size: 0.75rem;
   margin-bottom: 6px;
 }
-.opp-sets { display: flex; gap: 4px; flex-wrap: wrap; }
-.opp-set-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
+.opp-sets { display: flex; gap: 3px; flex-wrap: wrap; }
+.opp-set-pill {
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   border: 1px solid rgba(255,255,255,0.2);
+  font-weight: 600;
 }
-.opp-set-dot.complete {
+.opp-set-pill.complete {
   box-shadow: 0 0 6px rgba(78, 205, 196, 0.6);
   border-color: var(--green);
 }
@@ -283,9 +305,17 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   padding: 4px 8px;
   font-size: 0.7rem;
   font-weight: 600;
-  text-transform: uppercase;
   color: white;
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.rent-badge {
+  font-size: 0.6rem;
+  background: rgba(0,0,0,0.3);
+  padding: 1px 6px;
+  border-radius: 8px;
 }
 
 .prop-set-cards { padding: 4px 8px 6px; }
@@ -296,6 +326,31 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.wild-tag {
+  font-size: 0.55rem;
+  background: rgba(255,255,255,0.15);
+  padding: 0 4px;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+.prop-bonus {
+  font-size: 0.65rem;
+  color: var(--green);
+  padding: 1px 0;
+  font-weight: 600;
+}
+.set-complete-tag {
+  text-align: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--green);
+  padding: 2px;
+  background: rgba(78, 205, 196, 0.1);
+  letter-spacing: 1px;
 }
 
 /* ─── Bank ─────────────────────────────────────────────────────────── */
@@ -339,9 +394,9 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
 }
 
 .card-hand {
-  min-width: 85px;
-  max-width: 85px;
-  height: 120px;
+  min-width: 90px;
+  max-width: 90px;
+  height: 135px;
   border-radius: 8px;
   padding: 8px 6px;
   display: flex;
@@ -364,8 +419,25 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
 }
 
 .card-name { font-size: 0.7rem; font-weight: 600; line-height: 1.15; }
+.card-desc-mini { font-size: 0.55rem; color: var(--dim); line-height: 1.2; overflow: hidden; flex: 1; margin: 3px 0; }
+.card-bottom { display: flex; justify-content: space-between; align-items: flex-end; }
 .card-value { font-size: 1rem; font-weight: 700; color: var(--green); }
 .card-type { font-size: 0.6rem; color: var(--dim); text-transform: uppercase; }
+
+/* Selected card info strip */
+.selected-card-info {
+  background: var(--bg3);
+  padding: 8px 16px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--bg2);
+}
+.selected-card-info strong { color: var(--accent2); }
+.selected-card-info .card-desc { color: var(--dim); flex: 1; }
+.selected-card-info .card-val { color: var(--green); font-weight: 600; white-space: nowrap; }
 
 /* ─── Action Bar ───────────────────────────────────────────────────── */
 

@@ -43,6 +43,44 @@ class RoomManager {
     return this.getRoomInfo(roomId)!;
   }
 
+  rejoinRoom(socketId: string, playerName: string, roomId: string): RoomInfo | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    // Find a disconnected player with the same name
+    let oldSocketId: string | null = null;
+    for (const [id, p] of room.players.entries()) {
+      if (p.name === playerName && !p.connected) {
+        oldSocketId = id;
+        break;
+      }
+    }
+    if (!oldSocketId) return null;
+
+    // Swap the old socket ID for the new one
+    const playerData = room.players.get(oldSocketId)!;
+    room.players.delete(oldSocketId);
+    playerData.socketId = socketId;
+    playerData.connected = true;
+    room.players.set(socketId, playerData);
+
+    // Update socketToRoom mapping
+    this.socketToRoom.delete(oldSocketId);
+    this.socketToRoom.set(socketId, roomId);
+
+    // Update host if needed
+    if (room.hostId === oldSocketId) {
+      room.hostId = socketId;
+    }
+
+    // Update the game engine's player ID mapping
+    if (room.game) {
+      room.game.replacePlayerId(oldSocketId, socketId);
+    }
+
+    return this.getRoomInfo(roomId)!;
+  }
+
   leaveRoom(socketId: string): { roomId: string; room: RoomInfo | null } | null {
     const roomId = this.socketToRoom.get(socketId);
     if (!roomId) return null;

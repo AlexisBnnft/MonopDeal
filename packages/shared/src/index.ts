@@ -200,6 +200,7 @@ export interface RoomInfo {
 export interface ClientEvents {
   'room:create': (data: { playerName: string; roomName: string }) => void;
   'room:join': (data: { playerName: string; roomId: string }) => void;
+  'room:rejoin': (data: { playerName: string; roomId: string }) => void;
   'room:leave': () => void;
   'game:start': () => void;
   'game:draw': () => void;
@@ -223,6 +224,7 @@ export interface ClientEvents {
 export interface ServerEvents {
   'room:created': (room: RoomInfo) => void;
   'room:joined': (room: RoomInfo) => void;
+  'room:rejoined': (room: RoomInfo) => void;
   'room:updated': (room: RoomInfo) => void;
   'room:left': () => void;
   'rooms:list': (rooms: RoomInfo[]) => void;

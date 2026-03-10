@@ -14,12 +14,20 @@ export function useSocket() {
     socket.on('connect', () => {
       setConnected(true);
       socket.emit('rooms:list');
+
+      // Attempt to rejoin a room after reload
+      const savedRoom = localStorage.getItem('monopoly-room');
+      const playerName = localStorage.getItem('monopoly-name');
+      if (savedRoom && playerName) {
+        socket.emit('room:rejoin', { playerName, roomId: savedRoom });
+      }
     });
     socket.on('disconnect', () => setConnected(false));
 
     socket.on('rooms:list', (rooms) => setRooms(rooms));
     socket.on('room:created', (room) => setCurrentRoom(room));
     socket.on('room:joined', (room) => setCurrentRoom(room));
+    socket.on('room:rejoined', (room) => setCurrentRoom(room));
     socket.on('room:updated', (room) => setCurrentRoom(room));
     socket.on('room:left', () => {
       setCurrentRoom(null);

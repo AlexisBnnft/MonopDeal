@@ -31,6 +31,24 @@ export function registerHandlers(io: IO, socket: TypedSocket) {
     io.emit('rooms:list', roomManager.listRooms());
   });
 
+  socket.on('room:rejoin', ({ playerName, roomId }) => {
+    const room = roomManager.rejoinRoom(socket.id, playerName, roomId);
+    if (!room) {
+      socket.emit('error', 'Cannot rejoin room');
+      return;
+    }
+    socket.join(room.id);
+    socket.emit('room:rejoined', room);
+    io.to(room.id).emit('room:updated', room);
+    io.emit('rooms:list', roomManager.listRooms());
+
+    // If game is in progress, send them the current state
+    const game = roomManager.getGame(roomId);
+    if (game) {
+      broadcastState(io, roomId);
+    }
+  });
+
   socket.on('room:leave', () => handleLeave(io, socket));
 
   // ─── Game Events ────────────────────────────────────────────────────

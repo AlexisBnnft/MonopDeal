@@ -36,7 +36,14 @@ export const useStore = create<Store>((set) => ({
   rooms: [],
   setRooms: (rooms) => set({ rooms }),
   currentRoom: null,
-  setCurrentRoom: (room) => set({ currentRoom: room }),
+  setCurrentRoom: (room) => {
+    if (room) {
+      localStorage.setItem('monopoly-room', room.id);
+    } else {
+      localStorage.removeItem('monopoly-room');
+    }
+    set({ currentRoom: room });
+  },
 
   gameState: null,
   setGameState: (state) => set({ gameState: state }),

@@ -796,6 +796,41 @@ export class GameEngine {
     };
   }
 
+  replacePlayerId(oldId: string, newId: string) {
+    // Update playerOrder
+    const idx = this.playerOrder.indexOf(oldId);
+    if (idx !== -1) this.playerOrder[idx] = newId;
+
+    // Swap all map entries
+    const swapMap = <V>(map: Map<string, V>) => {
+      if (map.has(oldId)) {
+        map.set(newId, map.get(oldId)!);
+        map.delete(oldId);
+      }
+    };
+    swapMap(this.hands);
+    swapMap(this.banks);
+    swapMap(this.properties);
+    swapMap(this.playerNames);
+    swapMap(this.playerConnected);
+    this.playerConnected.set(newId, true);
+
+    // Update pendingAction references
+    if (this.pendingAction) {
+      const pa = this.pendingAction;
+      if (pa.sourcePlayerId === oldId) pa.sourcePlayerId = newId;
+      pa.targetPlayerIds = pa.targetPlayerIds.map(id => id === oldId ? newId : id);
+      pa.respondedPlayerIds = pa.respondedPlayerIds.map(id => id === oldId ? newId : id);
+      if (pa.jsnChain) {
+        if (pa.jsnChain.lastPlayedBy === oldId) pa.jsnChain.lastPlayedBy = newId;
+        if (pa.jsnChain.awaitingCounterFrom === oldId) pa.jsnChain.awaitingCounterFrom = newId;
+      }
+    }
+
+    // Update winnerId
+    if (this.winnerId === oldId) this.winnerId = newId;
+  }
+
   setDisconnected(playerId: string) { this.playerConnected.set(playerId, false); }
   setConnected(playerId: string) { this.playerConnected.set(playerId, true); }
 }

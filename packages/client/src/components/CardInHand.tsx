@@ -1,5 +1,7 @@
 import { useDraggable } from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { motion } from 'framer-motion';
 import {
   COLOR_HEX, COLOR_NAMES, SET_SIZE, RENT_VALUES, displayName,
   type AnyCard, type PropertyColor,
@@ -10,9 +12,11 @@ interface Props {
   selected: boolean;
   onClick: () => void;
   isDragDisabled?: boolean;
+  index?: number;
+  discardMode?: boolean;
 }
 
-export function CardInHand({ card, selected, onClick, isDragDisabled }: Props) {
+export function CardInHand({ card, selected, onClick, isDragDisabled, index = 0, discardMode }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `hand-${card.id}`,
     data: { card },
@@ -25,9 +29,51 @@ export function CardInHand({ card, selected, onClick, isDragDisabled }: Props) {
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <GameCard card={card} selected={selected} onClick={onClick} isDragging={isDragging} />
-    </div>
+    <motion.div
+      ref={setNodeRef}
+      style={style}
+      layoutId={card.id}
+      initial={{ x: 120, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ scale: 0.7, opacity: 0, transition: { duration: 0.25 } }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30, delay: index * 0.06 }}
+      {...attributes}
+      {...listeners}
+    >
+      <GameCard card={card} selected={selected} onClick={onClick} isDragging={isDragging} discardMode={discardMode} />
+    </motion.div>
+  );
+}
+
+export function SortableCardInHand({ card, onClick, index = 0 }: {
+  card: AnyCard; onClick: () => void; index?: number;
+}) {
+  const {
+    attributes, listeners, setNodeRef,
+    transform, transition, isDragging,
+  } = useSortable({ id: card.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.35 : 1,
+    cursor: isDragging ? 'grabbing' : 'grab',
+  };
+
+  return (
+    <motion.div
+      ref={setNodeRef}
+      style={style}
+      layoutId={card.id}
+      initial={{ x: 120, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={{ scale: 0.7, opacity: 0, transition: { duration: 0.25 } }}
+      transition={{ type: 'spring', stiffness: 400, damping: 30, delay: index * 0.06 }}
+      {...attributes}
+      {...listeners}
+    >
+      <GameCard card={card} selected={false} onClick={onClick} isDragging={isDragging} />
+    </motion.div>
   );
 }
 
@@ -41,27 +87,28 @@ export function CardGhost({ card }: { card: AnyCard }) {
 
 // ─── Card dispatcher ────────────────────────────────────────────────────────
 
-function GameCard({ card, selected, onClick, isDragging }: {
-  card: AnyCard; selected: boolean; onClick: () => void; isDragging?: boolean;
+function GameCard({ card, selected, onClick, isDragging, discardMode }: {
+  card: AnyCard; selected: boolean; onClick: () => void; isDragging?: boolean; discardMode?: boolean;
 }) {
-  if (card.type === 'property') return <PropertyCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} />;
-  if (card.type === 'property_wildcard') return <WildcardCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} />;
-  if (card.type === 'money') return <MoneyCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} />;
-  if (card.type === 'action') return <ActionCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} />;
-  if (card.type === 'rent') return <RentCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} />;
+  const extraClass = discardMode ? 'card-discard-mode' : '';
+  if (card.type === 'property') return <PropertyCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} extraClass={extraClass} />;
+  if (card.type === 'property_wildcard') return <WildcardCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} extraClass={extraClass} />;
+  if (card.type === 'money') return <MoneyCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} extraClass={extraClass} />;
+  if (card.type === 'action') return <ActionCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} extraClass={extraClass} />;
+  if (card.type === 'rent') return <RentCardView card={card} selected={selected} onClick={onClick} isDragging={isDragging} extraClass={extraClass} />;
   return null;
 }
 
 // ─── Property Card ──────────────────────────────────────────────────────────
 
-function PropertyCardView({ card, selected, onClick, isDragging }: {
-  card: AnyCard & { color: PropertyColor }; selected: boolean; onClick: () => void; isDragging?: boolean;
+function PropertyCardView({ card, selected, onClick, isDragging, extraClass }: {
+  card: AnyCard & { color: PropertyColor }; selected: boolean; onClick: () => void; isDragging?: boolean; extraClass?: string;
 }) {
   const rents = RENT_VALUES[card.color];
   const setSize = SET_SIZE[card.color];
 
   return (
-    <div className={`game-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`} onClick={onClick}>
+    <div className={`game-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${extraClass || ''}`} onClick={onClick}>
       <div className="gc-color-band" style={{ background: COLOR_HEX[card.color] }}>
         <span className="gc-color-name">{COLOR_NAMES[card.color]}</span>
         <span className="gc-set-size">{setSize} pour le set</span>
@@ -96,13 +143,13 @@ function PropertyCardView({ card, selected, onClick, isDragging }: {
 
 // ─── Wildcard Card ──────────────────────────────────────────────────────────
 
-function WildcardCardView({ card, selected, onClick, isDragging }: {
-  card: AnyCard & { colors: [PropertyColor, PropertyColor] | 'all'; currentColor: PropertyColor }; selected: boolean; onClick: () => void; isDragging?: boolean;
+function WildcardCardView({ card, selected, onClick, isDragging, extraClass }: {
+  card: AnyCard & { colors: [PropertyColor, PropertyColor] | 'all'; currentColor: PropertyColor }; selected: boolean; onClick: () => void; isDragging?: boolean; extraClass?: string;
 }) {
   const isUniversal = card.colors === 'all';
 
   return (
-    <div className={`game-card wildcard ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`} onClick={onClick}>
+    <div className={`game-card wildcard ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${extraClass || ''}`} onClick={onClick}>
       {isUniversal ? (
         <div className="gc-color-band gc-rainbow">
           <span className="gc-color-name">JOKER</span>
@@ -138,11 +185,11 @@ function WildcardCardView({ card, selected, onClick, isDragging }: {
 
 // ─── Money Card ─────────────────────────────────────────────────────────────
 
-function MoneyCardView({ card, selected, onClick, isDragging }: {
-  card: AnyCard; selected: boolean; onClick: () => void; isDragging?: boolean;
+function MoneyCardView({ card, selected, onClick, isDragging, extraClass }: {
+  card: AnyCard; selected: boolean; onClick: () => void; isDragging?: boolean; extraClass?: string;
 }) {
   return (
-    <div className={`game-card money-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`} onClick={onClick}>
+    <div className={`game-card money-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${extraClass || ''}`} onClick={onClick}>
       <div className="gc-color-band gc-money-band">
         <span className="gc-color-name">ARGENT</span>
       </div>
@@ -172,13 +219,13 @@ const ACTION_COLORS: Record<string, string> = {
   double_the_rent: '#9b59b6',
 };
 
-function ActionCardView({ card, selected, onClick, isDragging }: {
-  card: AnyCard & { actionType: string }; selected: boolean; onClick: () => void; isDragging?: boolean;
+function ActionCardView({ card, selected, onClick, isDragging, extraClass }: {
+  card: AnyCard & { actionType: string }; selected: boolean; onClick: () => void; isDragging?: boolean; extraClass?: string;
 }) {
   const bg = ACTION_COLORS[card.actionType] || '#f39c12';
 
   return (
-    <div className={`game-card action-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`} onClick={onClick}>
+    <div className={`game-card action-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${extraClass || ''}`} onClick={onClick}>
       <div className="gc-color-band" style={{ background: bg }}>
         <span className="gc-color-name">ACTION</span>
       </div>
@@ -195,13 +242,13 @@ function ActionCardView({ card, selected, onClick, isDragging }: {
 
 // ─── Rent Card ──────────────────────────────────────────────────────────────
 
-function RentCardView({ card, selected, onClick, isDragging }: {
-  card: AnyCard & { colors: [PropertyColor, PropertyColor] | 'all' }; selected: boolean; onClick: () => void; isDragging?: boolean;
+function RentCardView({ card, selected, onClick, isDragging, extraClass }: {
+  card: AnyCard & { colors: [PropertyColor, PropertyColor] | 'all' }; selected: boolean; onClick: () => void; isDragging?: boolean; extraClass?: string;
 }) {
   const isWild = card.colors === 'all';
 
   return (
-    <div className={`game-card rent-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`} onClick={onClick}>
+    <div className={`game-card rent-card ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${extraClass || ''}`} onClick={onClick}>
       {isWild ? (
         <div className="gc-color-band gc-rainbow">
           <span className="gc-color-name">LOYER</span>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDroppable } from '@dnd-kit/core';
-import { displayName, COLOR_HEX, COLOR_NAMES, SET_SIZE, type Player, type PropertyColor } from '@monopoly-deal/shared';
+import { motion, AnimatePresence } from 'framer-motion';
+import { displayName, COLOR_HEX, COLOR_NAMES, SET_SIZE, type Player, type PropertyColor, type PendingAction } from '@monopoly-deal/shared';
 import { PropertySetCard } from './PropertySetCard.tsx';
 import type { TargetingState } from './types.ts';
 
@@ -9,13 +10,14 @@ interface Props {
   isMe: boolean;
   isActive: boolean;
   targeting: TargetingState | null;
+  pendingAction: PendingAction | null;
   onClickPlayer?: () => void;
   onClickCard?: (cardId: string) => void;
   onClickSet?: (color: PropertyColor) => void;
 }
 
 export function PlayerArea({
-  player, isMe, isActive, targeting,
+  player, isMe, isActive, targeting, pendingAction,
   onClickPlayer, onClickCard, onClickSet,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
@@ -59,6 +61,11 @@ export function PlayerArea({
   const completeSets = player.propertySets.filter(s => s.isComplete).length;
   const totalSets = player.propertySets.length;
 
+  const isActionSource = pendingAction?.sourcePlayerId === player.id;
+  const mustRespond = pendingAction
+    && pendingAction.targetPlayerIds.includes(player.id)
+    && !pendingAction.respondedPlayerIds.includes(player.id);
+
   const areaClasses = [
     'player-area-board',
     isMe ? 'player-area-me' : 'player-area-opponent',
@@ -68,6 +75,8 @@ export function PlayerArea({
     isOver ? 'player-area-drop-over' : '',
     !player.connected ? 'player-area-disconnected' : '',
     collapsed && !isMe ? 'player-area-collapsed' : '',
+    isActionSource ? 'player-area-action-source' : '',
+    mustRespond ? 'player-area-must-respond' : '',
   ].filter(Boolean).join(' ');
 
   return (
@@ -83,6 +92,8 @@ export function PlayerArea({
           <strong className="pa-name">{player.name}</strong>
           {isActive && <span className="pa-turn-badge">Tour</span>}
           {!player.connected && <span className="pa-dc-badge">DC</span>}
+          {isActionSource && <span className="pa-action-badge">Action</span>}
+          {mustRespond && <span className="pa-respond-badge">!</span>}
         </div>
         <div className="pa-stats">
           {!isMe && <span className="pa-stat">{player.handCount} cartes</span>}
@@ -117,28 +128,30 @@ export function PlayerArea({
       ) : (
         <div className="pa-board-content">
           <div className="pa-properties">
-            {player.propertySets.map((set, i) => (
-              <PropertySetCard
-                key={`${set.color}-${i}`}
-                set={set}
-                compact={!isMe}
-                targetable={
-                  (isSetTargetable && set.isComplete) ||
-                  (isCardTargetable && !set.isComplete && set.cards.length > 0) ||
-                  (isMyCardTargetable && !set.isComplete && set.cards.length > 0) ||
-                  false
-                }
-                highlighted={targeting?.selectedColor === set.color && (isSetTargetable || false)}
-                dimmed={
-                  (isSetTargetable && !set.isComplete) ||
-                  (isCardTargetable && set.isComplete) ||
-                  false
-                }
-                onClickSet={onClickSet}
-                onClickCard={onClickCard}
-                selectableCardIds={selectableCardIds}
-              />
-            ))}
+            <AnimatePresence>
+              {player.propertySets.map((set, i) => (
+                <PropertySetCard
+                  key={`${set.color}-${i}`}
+                  set={set}
+                  compact={!isMe}
+                  targetable={
+                    (isSetTargetable && set.isComplete) ||
+                    (isCardTargetable && !set.isComplete && set.cards.length > 0) ||
+                    (isMyCardTargetable && !set.isComplete && set.cards.length > 0) ||
+                    false
+                  }
+                  highlighted={targeting?.selectedColor === set.color && (isSetTargetable || false)}
+                  dimmed={
+                    (isSetTargetable && !set.isComplete) ||
+                    (isCardTargetable && set.isComplete) ||
+                    false
+                  }
+                  onClickSet={onClickSet}
+                  onClickCard={onClickCard}
+                  selectableCardIds={selectableCardIds}
+                />
+              ))}
+            </AnimatePresence>
             {player.propertySets.length === 0 && (
               <div className="pa-empty">{isMe ? 'Depose tes proprietes ici' : 'Aucune propriete'}</div>
             )}
@@ -147,20 +160,27 @@ export function PlayerArea({
           <div className="pa-bank">
             <div className="pa-bank-label">Banque</div>
             <div className="pa-bank-cards">
-              {player.bank.length > 0 ? (
-                player.bank.map((c, i) => (
-                  <span
-                    key={c.id}
-                    className="pa-bank-chip"
-                    style={{ '--chip-idx': i } as React.CSSProperties}
-                    title={`${displayName(c)} (${c.value}M)`}
-                  >
-                    {c.value}M
-                  </span>
-                ))
-              ) : (
-                <span className="pa-empty-small">{isMe ? 'Depose ici' : 'Vide'}</span>
-              )}
+              <AnimatePresence>
+                {player.bank.length > 0 ? (
+                  player.bank.map((c, i) => (
+                    <motion.span
+                      key={c.id}
+                      layoutId={c.id}
+                      className="pa-bank-chip"
+                      style={{ '--chip-idx': i } as React.CSSProperties}
+                      title={`${displayName(c)} (${c.value}M)`}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0, transition: { duration: 0.2 } }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                    >
+                      {c.value}M
+                    </motion.span>
+                  ))
+                ) : (
+                  <span className="pa-empty-small">{isMe ? 'Depose ici' : 'Vide'}</span>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         </div>

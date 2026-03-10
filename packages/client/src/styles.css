@@ -267,7 +267,6 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   font-size: 0.7rem;
   color: var(--dim);
   padding: 1px 0;
-  animation: fadeIn 0.2s;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -419,6 +418,68 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   color: white;
   text-shadow: 0 1px 2px rgba(0,0,0,0.5);
   white-space: nowrap;
+}
+
+/* Action highlights */
+.player-area-action-source {
+  border-color: #9b59b6 !important;
+  box-shadow: 0 0 12px rgba(155, 89, 182, 0.5), inset 0 0 8px rgba(155, 89, 182, 0.1);
+  animation: pulseSource 1.5s ease-in-out infinite;
+}
+@keyframes pulseSource {
+  0%, 100% { box-shadow: 0 0 12px rgba(155, 89, 182, 0.5), inset 0 0 8px rgba(155, 89, 182, 0.1); }
+  50% { box-shadow: 0 0 24px rgba(155, 89, 182, 0.8), inset 0 0 12px rgba(155, 89, 182, 0.2); }
+}
+
+.player-area-must-respond {
+  border-color: #e67e22 !important;
+  box-shadow: 0 0 12px rgba(230, 126, 34, 0.5), inset 0 0 8px rgba(230, 126, 34, 0.1);
+  animation: pulseRespond 1.2s ease-in-out infinite;
+}
+@keyframes pulseRespond {
+  0%, 100% { box-shadow: 0 0 12px rgba(230, 126, 34, 0.5), inset 0 0 8px rgba(230, 126, 34, 0.1); }
+  50% { box-shadow: 0 0 24px rgba(230, 126, 34, 0.8), inset 0 0 12px rgba(230, 126, 34, 0.2); }
+}
+
+.pa-action-badge {
+  font-size: 0.5rem;
+  background: #9b59b6;
+  color: white;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+.pa-respond-badge {
+  font-size: 0.6rem;
+  background: #e67e22;
+  color: white;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-weight: 700;
+  animation: pulseRespond 1.2s ease-in-out infinite;
+}
+
+/* Action flash overlay */
+.action-flash-overlay {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: white;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.7), 0 0 40px rgba(155,89,182,0.6);
+  letter-spacing: 2px;
+  pointer-events: none;
+  background: linear-gradient(135deg, rgba(155,89,182,0.85), rgba(230,126,34,0.85));
+  padding: 16px 40px;
+  border-radius: 16px;
+  backdrop-filter: blur(4px);
 }
 
 /* ═══════════════════════════════════════════════════════════════════ */
@@ -620,11 +681,26 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  padding-bottom: 6px;
-  justify-content: center;
-  scrollbar-width: none;
+  padding-bottom: 8px;
+  scrollbar-width: auto;
+  scrollbar-color: var(--dim) rgba(255,255,255,0.06);
 }
-.hand::-webkit-scrollbar { display: none; }
+.hand::-webkit-scrollbar {
+  height: 8px;
+}
+.hand::-webkit-scrollbar-track {
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+  margin: 0 4px;
+}
+.hand::-webkit-scrollbar-thumb {
+  background: var(--dim);
+  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.1);
+}
+.hand::-webkit-scrollbar-thumb:hover {
+  background: var(--text);
+}
 
 /* Base card (Monopoly Deal style) */
 .game-card {
@@ -638,12 +714,13 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   background: #faf8f0;
   color: #222;
   border: 3px solid #ddd;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: box-shadow 0.15s;
   flex-shrink: 0;
   overflow: hidden;
   position: relative;
   touch-action: none;
   user-select: none;
+  will-change: transform;
 }
 .game-card:hover {
   transform: translateY(-12px);
@@ -879,6 +956,46 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   color: var(--text);
 }
 
+/* ─── Reorder Mode Button ─────────────────────────────────────────── */
+
+.btn-reorder {
+  background: var(--bg3);
+  color: var(--dim);
+  border: 1px solid var(--bg3);
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-reorder:hover {
+  border-color: var(--green);
+  color: var(--text);
+}
+.btn-reorder.active {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(78, 205, 196, 0.1);
+}
+
+/* ─── Reorder Active Hand ─────────────────────────────────────────── */
+
+.hand.reorder-active {
+  background: rgba(78, 205, 196, 0.05);
+  border-radius: 8px;
+  padding: 8px;
+}
+.hand.reorder-active .game-card {
+  cursor: grab;
+  border-color: rgba(78, 205, 196, 0.3);
+}
+.hand.reorder-active .game-card:active {
+  cursor: grabbing;
+}
+.hand.reorder-active .game-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 6px 20px rgba(78, 205, 196, 0.3);
+}
+
 /* ─── Action Bar ───────────────────────────────────────────────────── */
 
 .action-bar {
@@ -943,7 +1060,6 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
-  animation: fadeIn 0.2s;
 }
 .discard-banner-icon { font-size: 1.2rem; }
 .discard-banner span:nth-child(2) {
@@ -1168,18 +1284,92 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   justify-content: center;
   z-index: 100;
 }
+
+/* ─── End Game Animation ──────────────────────────────────────────── */
+
+.endgame-overlay {
+  background: radial-gradient(ellipse at center, rgba(15,25,35,0.92) 0%, rgba(0,0,0,0.95) 100%);
+  overflow: hidden;
+}
+
 .winner-box {
-  background: var(--bg2);
-  padding: 40px 60px;
-  border-radius: var(--radius);
+  background: linear-gradient(145deg, var(--bg2), #1e3040);
+  padding: 48px 64px;
+  border-radius: 16px;
   text-align: center;
-  border: 3px solid var(--green);
+  border: 2px solid var(--green);
+  box-shadow:
+    0 0 40px rgba(78, 205, 196, 0.15),
+    0 0 80px rgba(78, 205, 196, 0.08),
+    0 20px 60px rgba(0,0,0,0.5);
+  position: relative;
+  z-index: 2;
+  max-width: 440px;
 }
 .winner-box h1 {
   color: var(--green);
-  font-size: 2rem;
-  margin-bottom: 20px;
+  font-size: 2.2rem;
+  margin-bottom: 8px;
+  text-shadow: 0 0 20px rgba(78, 205, 196, 0.4);
 }
+.winner-trophy {
+  font-size: 4rem;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 0 16px rgba(241, 196, 15, 0.5));
+  animation: trophyFloat 3s ease-in-out infinite;
+}
+@keyframes trophyFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.winner-sub {
+  color: var(--dim);
+  font-size: 0.95rem;
+  margin-bottom: 24px;
+  line-height: 1.4;
+}
+.winner-box button {
+  padding: 12px 32px;
+  font-size: 1rem;
+}
+
+/* Confetti */
+.confetti-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  left: var(--x);
+  width: var(--size);
+  height: var(--size);
+  background: var(--color);
+  border-radius: 2px;
+  animation: confettiFall 3.5s ease-in var(--delay) infinite;
+  opacity: 0;
+}
+.confetti-piece:nth-child(even) { border-radius: 50%; }
+.confetti-piece:nth-child(3n) { border-radius: 0; transform: rotate(45deg); }
+
+@keyframes confettiFall {
+  0% {
+    opacity: 1;
+    transform: translateY(0) translateX(0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(100vh) translateX(var(--drift)) rotate(720deg);
+  }
+}
+
+/* ─── Responsive text helpers ─────────────────────────────────────── */
+
+.show-mobile { display: none; }
+.hide-mobile { display: inline; }
 
 /* ═══════════════════════════════════════════════════════════════════ */
 /* ─── Responsive ──────────────────────────────────────────────────── */
@@ -1202,6 +1392,10 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   }
   .my-properties-zone { flex: 1; min-width: 0; }
   .player-area-opponent { max-width: 200px; min-width: 150px; }
+
+  .hand::-webkit-scrollbar { height: 10px; }
+  .hand::-webkit-scrollbar-thumb { background: var(--text); }
+  .hand::-webkit-scrollbar-track { background: rgba(255,255,255,0.08); }
 }
 
 @media (max-width: 640px) {
@@ -1242,6 +1436,9 @@ button.small { padding: 6px 14px; font-size: 0.85rem; }
   .gc-value { font-size: 0.75rem; padding: 0 5px; }
 
   .hand { gap: 8px; justify-content: flex-start; }
+
+  .show-mobile { display: inline; }
+  .hide-mobile { display: none; }
 
   .board-opponents { gap: 6px; padding: 6px 8px; }
   .player-area-opponent { min-width: 140px; }

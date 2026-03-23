@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import type { ClientEvents, ServerEvents } from '@monopoly-deal/shared';
 import { roomManager } from '../rooms/RoomManager.js';
+import { botManager } from '../game/ai/BotManager.js';
 
 type IO = Server<ClientEvents, ServerEvents>;
 type TypedSocket = Socket<ClientEvents, ServerEvents>;
@@ -16,6 +17,38 @@ export function registerHandlers(io: IO, socket: TypedSocket) {
     const room = roomManager.createRoom(socket.id, playerName, roomName);
     socket.join(room.id);
     socket.emit('room:created', room);
+    io.emit('rooms:list', roomManager.listRooms());
+  });
+
+  socket.on('room:create-ai', async ({ playerName, roomName, botCount, difficulty, fast }) => {
+    const room = roomManager.createRoom(socket.id, playerName, roomName);
+    socket.join(room.id);
+    socket.emit('room:created', room);
+
+    const addr = (io as any).httpServer?.address?.();
+    const port = typeof addr === 'object' && addr ? addr.port : 3003;
+    const serverUrl = `http://localhost:${port}`;
+
+    try {
+      await botManager.spawnBots(room.id, botCount, difficulty, serverUrl, fast);
+      // Wait for bots to fully join, then auto-start
+      await new Promise(r => setTimeout(r, 500));
+
+      const updatedRoom = roomManager.getRoomInfo(room.id);
+      if (updatedRoom) {
+        io.to(room.id).emit('room:updated', updatedRoom);
+      }
+
+      const game = roomManager.startGame(room.id);
+      if (game) {
+        broadcastState(io, room.id);
+        const ri = roomManager.getRoomInfo(room.id);
+        if (ri) io.to(room.id).emit('room:updated', ri);
+      }
+    } catch (err) {
+      console.error('[room:create-ai] Failed to spawn bots:', err);
+      socket.emit('error', 'Failed to create AI game');
+    }
     io.emit('rooms:list', roomManager.listRooms());
   });
 
@@ -218,6 +251,8 @@ function handleLeave(io: IO, socket: TypedSocket) {
     io.to(result.roomId).emit('room:updated', result.room);
     const game = roomManager.getGame(result.roomId);
     if (game) broadcastState(io, result.roomId);
+  } else {
+    botManager.cleanupRoom(result.roomId);
   }
   io.emit('rooms:list', roomManager.listRooms());
 }
@@ -227,13 +262,16 @@ function broadcastState(io: IO, roomId: string) {
   if (!game) return;
 
   const state = game.getState();
-  io.to(roomId).emit('game:state', state);
 
+  // Send hands BEFORE state so that when game:state triggers client-side
+  // logic (bot onStateUpdate, RL env decision check), the hand is current.
   for (const player of state.players) {
     const hand = game.getHand(player.id);
     const playerSocket = io.sockets.sockets.get(player.id);
     playerSocket?.emit('game:hand', hand);
   }
+
+  io.to(roomId).emit('game:state', state);
 
   if (state.lastAction) {
     io.to(roomId).emit('game:notification', state.lastAction);

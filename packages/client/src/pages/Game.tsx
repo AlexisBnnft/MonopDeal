@@ -20,6 +20,9 @@ import { PropertySetCard } from '../components/PropertySetCard.tsx';
 import { DropZone } from '../components/DropZone.tsx';
 import { TargetingOverlay, ColorPicker } from '../components/TargetingOverlay.tsx';
 import type { TargetingState, TargetingStep } from '../components/types.ts';
+import { audioManager } from '../audio/AudioManager.ts';
+import { SOUND_NAMES } from '../audio/soundMap.ts';
+import { AudioControls } from '../components/AudioControls.tsx';
 
 export function Game() {
   const { gameState, hand, notifications, currentRoom, chatMessages, floatingReactions, removeFloatingReaction, reorderHand, sortHand } = useStore();
@@ -37,6 +40,7 @@ export function Game() {
   const [chatInput, setChatInput] = useState('');
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const [swapMode, setSwapMode] = useState<number | null>(null);
+  const [showQuitConfirm, setShowQuitConfirm] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll chat
@@ -256,6 +260,7 @@ export function Game() {
         break;
     }
 
+    audioManager.play(SOUND_NAMES.CARD_PLAY_ACTION);
     socket.emit('game:play-card', { cardId: targeting.cardId, ...opts });
     setTargeting(null);
     setSelectedCardId(null);
@@ -298,6 +303,7 @@ export function Game() {
     if (reorderMode) return;
     if (targeting) { cancelTargeting(); return; }
     if (isMyTurn && gameState.turnPhase === 'discard') {
+      audioManager.play(SOUND_NAMES.CARD_DISCARD);
       socket.emit('game:discard', { cardIds: [card.id] });
       setSelectedCardId(null);
       return;
@@ -306,6 +312,14 @@ export function Game() {
   }
 
   function playCardSimple(card: AnyCard, opts: Record<string, any> = {}) {
+    // Play appropriate sound based on card type
+    if (opts.asMoney) {
+      audioManager.play(SOUND_NAMES.CARD_PLAY_MONEY);
+    } else if (card.type === 'property' || card.type === 'property_wildcard') {
+      audioManager.play(SOUND_NAMES.CARD_PLAY_PROPERTY);
+    } else if (card.type === 'action' || card.type === 'rent') {
+      audioManager.play(SOUND_NAMES.CARD_PLAY_ACTION);
+    }
     socket.emit('game:play-card', { cardId: card.id, ...opts });
     setSelectedCardId(null);
     setTargeting(null);
@@ -330,7 +344,10 @@ export function Game() {
   function handleDragStart(event: DragStartEvent) {
     if (reorderMode) return;
     const card = event.active.data.current?.card as AnyCard | undefined;
-    if (card) setDraggedCard(card);
+    if (card) {
+      setDraggedCard(card);
+      audioManager.play(SOUND_NAMES.CARD_PICKUP);
+    }
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -349,6 +366,7 @@ export function Game() {
     setDraggedCard(null);
     const { active, over } = event;
     if (!over || !isMyTurn || !gameState) return;
+    audioManager.play(SOUND_NAMES.CARD_DROP);
     const turnPhase = gameState.turnPhase;
     if (turnPhase !== 'action' && turnPhase !== 'discard') return;
 
@@ -359,6 +377,7 @@ export function Game() {
     // Discard phase: only discard pile accepts
     if (turnPhase === 'discard') {
       if (dropId === 'drop-discard') {
+        audioManager.play(SOUND_NAMES.CARD_DISCARD);
         socket.emit('game:discard', { cardIds: [card.id] });
         setSelectedCardId(null);
       }
@@ -530,6 +549,10 @@ export function Game() {
             {isMyTurn && gameState.turnPhase === 'draw' && ' — Pioche tes cartes !'}
             {isMyTurn && gameState.turnPhase === 'discard' && ' — Defausse jusqu\'a 7 cartes'}
           </span>
+          <AudioControls />
+          <button className="btn-quit-game" onClick={() => setShowQuitConfirm(true)} title="Quitter la partie">
+            &#10005;
+          </button>
         </div>
 
         <LayoutGroup>
@@ -647,8 +670,8 @@ export function Game() {
           <JsnChainBar action={gameState.pendingAction} />
         )}
 
-        {/* Pending action */}
-        {!jsnChainForMe && pendingForMe && gameState.pendingAction && me && (
+        {/* Pending action (hidden while a JSN chain is being resolved) */}
+        {!jsnChainForMe && !gameState.pendingAction?.jsnChain && pendingForMe && gameState.pendingAction && me && (
           <PendingActionBar action={gameState.pendingAction} myId={myId!} me={me} />
         )}
 
@@ -756,7 +779,7 @@ export function Game() {
               <div className={`hand ${reorderMode ? 'reorder-active' : ''}`}>
                 {reorderMode ? (
                 <SortableContext items={localHandOrder} strategy={horizontalListSortingStrategy}>
-                  {sortedHand.map(((card, i), i) => (
+                  {sortedHand.map((card, i) => (
                     <SortableCardInHand
                       key={card.id}
                       card={card}
@@ -824,7 +847,7 @@ export function Game() {
             )}
 
             {!reorderMode && isMyTurn && gameState.turnPhase === 'draw' && (
-              <button className="btn-action" onClick={() => socket.emit('game:draw')}>
+              <button className="btn-action" onClick={() => { audioManager.play(SOUND_NAMES.CARD_DRAW); socket.emit('game:draw'); }}>
                 Piocher {hand.length === 0 ? '5' : '2'} cartes
               </button>
             )}
@@ -845,6 +868,7 @@ export function Game() {
                 if (hand.length > 7 && gameState.actionsRemaining > 0) {
                   setShowDiscardConfirm(true);
                 } else {
+                  audioManager.play(SOUND_NAMES.TURN_END);
                   socket.emit('game:end-turn');
                 }
               }}>
@@ -891,9 +915,33 @@ export function Game() {
                 </button>
                 <button className="btn-danger" onClick={() => {
                   setShowDiscardConfirm(false);
+                  audioManager.play(SOUND_NAMES.TURN_END);
                   socket.emit('game:end-turn');
                 }}>
                   Defausser quand meme
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Quit confirmation modal */}
+        {showQuitConfirm && (
+          <div className="color-picker-overlay" onClick={() => setShowQuitConfirm(false)}>
+            <div className="discard-confirm" onClick={e => e.stopPropagation()}>
+              <div className="discard-confirm-title">Quitter la partie ?</div>
+              <div className="discard-confirm-sub">
+                Tu vas abandonner la partie en cours. Cette action est irreversible.
+              </div>
+              <div className="discard-confirm-actions">
+                <button className="btn-action" onClick={() => setShowQuitConfirm(false)}>
+                  Continuer a jouer
+                </button>
+                <button className="btn-danger" onClick={() => {
+                  setShowQuitConfirm(false);
+                  socket.emit('room:leave');
+                }}>
+                  Quitter
                 </button>
               </div>
             </div>
@@ -1128,7 +1176,7 @@ function JsnChainBar({ action }: { action: PendingAction }) {
       </div>
       <div className="pending-actions">
         {hasJSN && (
-          <button className="btn-danger" onClick={() => socket.emit('game:respond', { accept: true })}>
+          <button className="btn-danger" onClick={() => { audioManager.play(SOUND_NAMES.JUST_SAY_NO); socket.emit('game:respond', { accept: true }); }}>
             Non merci ! (contre)
           </button>
         )}
@@ -1227,7 +1275,7 @@ function PendingActionBar({ action, myId, me }: { action: PendingAction; myId: s
         <button
           className="btn-action"
           disabled={payDisabled}
-          onClick={() => socket.emit('game:respond', { accept: true, paymentCardIds: selectedPayment })}
+          onClick={() => { audioManager.play(SOUND_NAMES.PAYMENT_SENT); socket.emit('game:respond', { accept: true, paymentCardIds: selectedPayment }); }}
         >
           {needsPayment
             ? (payableCards.length === 0
@@ -1239,7 +1287,7 @@ function PendingActionBar({ action, myId, me }: { action: PendingAction; myId: s
         </button>
 
         {hasJSN && (
-          <button className="btn-danger" onClick={() => socket.emit('game:respond', { accept: false })}>
+          <button className="btn-danger" onClick={() => { audioManager.play(SOUND_NAMES.JUST_SAY_NO); socket.emit('game:respond', { accept: false }); }}>
             Non merci !
           </button>
         )}

@@ -9,6 +9,8 @@
     "build": "npm run build --workspaces",
     "dev:server": "npm run dev --workspace=packages/server",
     "dev:client": "npm run dev --workspace=packages/client",
-    "test:ui": "bash scripts/dev-test.sh"
+    "test:ui": "bash scripts/dev-test.sh",
+    "arena": "npm run arena --workspace=packages/ai",
+    "train": "npx tsx packages/ai/src/train.ts"
   }
 }

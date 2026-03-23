@@ -2,11 +2,18 @@ import { v4 as uuid } from 'uuid';
 import type { RoomInfo, GameState, AnyCard, PropertyColor } from '@monopoly-deal/shared';
 import { GameEngine } from '../game/GameEngine.js';
 
+interface PlayerData {
+  socketId: string;
+  name: string;
+  connected: boolean;
+  isBot: boolean;
+}
+
 interface Room {
   id: string;
   name: string;
   hostId: string;
-  players: Map<string, { socketId: string; name: string; connected: boolean }>;
+  players: Map<string, PlayerData>;
   maxPlayers: number;
   game: GameEngine | null;
 }
@@ -22,7 +29,7 @@ class RoomManager {
       id: roomId,
       name: roomName,
       hostId: socketId,
-      players: new Map([[socketId, { socketId, name: playerName, connected: true }]]),
+      players: new Map([[socketId, { socketId, name: playerName, connected: true, isBot: false }]]),
       maxPlayers: 5,
       game: null,
     };
@@ -38,7 +45,8 @@ class RoomManager {
     if (room.players.size >= room.maxPlayers) return null;
     if (room.game) return null; // Can't join mid-game
 
-    room.players.set(socketId, { socketId, name: playerName, connected: true });
+    const isBot = playerName.endsWith('(IA)');
+    room.players.set(socketId, { socketId, name: playerName, connected: true, isBot });
     this.socketToRoom.set(socketId, roomId);
     return this.getRoomInfo(roomId)!;
   }
@@ -133,6 +141,7 @@ class RoomManager {
         id,
         name: p.name,
         connected: p.connected,
+        isBot: p.isBot,
       })),
       maxPlayers: room.maxPlayers,
       phase: room.game

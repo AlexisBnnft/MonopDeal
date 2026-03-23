@@ -184,13 +184,19 @@ export interface GameState {
   lastAction?: string;
 }
 
+// ─── AI ──────────────────────────────────────────────────────────────────────
+
+export type AIDifficulty = 'easy' | 'medium' | 'hard';
+
+export const BOT_NAMES = ['Alice', 'Bob', 'Charlie', 'Diana'] as const;
+
 // ─── Room ─────────────────────────────────────────────────────────────────────
 
 export interface RoomInfo {
   id: string;
   name: string;
   hostId: string;
-  players: { id: string; name: string; connected: boolean }[];
+  players: { id: string; name: string; connected: boolean; isBot?: boolean }[];
   maxPlayers: number;
   phase: GamePhase;
 }
@@ -237,6 +243,13 @@ export interface ClientEvents {
   'rooms:list': () => void;
   'chat:message': (data: { text: string }) => void;
   'chat:reaction': (data: { emoji: string }) => void;
+  'room:create-ai': (data: {
+    playerName: string;
+    roomName: string;
+    botCount: number;
+    difficulty: AIDifficulty;
+    fast?: boolean;
+  }) => void;
 }
 
 export interface ServerEvents {

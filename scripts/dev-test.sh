@@ -32,6 +32,9 @@ npm run dev:client &
 CLIENT_PID=$!
 sleep 3
 
+# Open the browser automatically
+open http://localhost:5173 2>/dev/null || xdg-open http://localhost:5173 2>/dev/null || true
+
 # 3. Start bots
 echo "[3/3] Starting bots..."
 echo ""

@@ -123,7 +123,10 @@ async function main() {
           if (me) {
             const payableIds = [
               ...me.bank.map(c => c.id),
-              ...me.propertySets.flatMap(s => s.cards.map(c => c.id)),
+              ...me.propertySets.flatMap(s =>
+                s.cards.filter(c => !(c.type === 'property_wildcard' && c.colors === 'all'))
+                  .map(c => c.id)
+              ),
             ];
             bot.socket.emit('game:respond', { accept: true, paymentCardIds: payableIds.slice(0, 2) });
           }
@@ -226,7 +229,10 @@ async function main() {
         if (me) {
           const payableIds = [
             ...me.bank.map(c => c.id),
-            ...me.propertySets.flatMap(s => s.cards.map(c => c.id)),
+            ...me.propertySets.flatMap(s =>
+              s.cards.filter(c => !(c.type === 'property_wildcard' && c.colors === 'all'))
+                .map(c => c.id)
+            ),
           ];
           console.log(`  [${bot.name}] responding to pending action...`);
           bot.socket.emit('game:respond', { accept: true, paymentCardIds: payableIds.slice(0, 3) });
@@ -244,7 +250,10 @@ async function handleBirthdayResponses(sourceBot) {
     if (!me) continue;
     const payableIds = [
       ...me.bank.map(c => c.id),
-      ...me.propertySets.flatMap(s => s.cards.map(c => c.id)),
+      ...me.propertySets.flatMap(s =>
+        s.cards.filter(c => !(c.type === 'property_wildcard' && c.colors === 'all'))
+          .map(c => c.id)
+      ),
     ];
     if (payableIds.length > 0) {
       bot.socket.emit('game:respond', { accept: true, paymentCardIds: payableIds.slice(0, 1) });

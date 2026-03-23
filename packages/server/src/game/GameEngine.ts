@@ -51,7 +51,7 @@ export class GameEngine {
       }
     }
 
-    this.turnPhase = 'draw';
+    this.autoDrawCurrentPlayer();
   }
 
   // ─── Core Actions ───────────────────────────────────────────────────
@@ -60,15 +60,9 @@ export class GameEngine {
     if (this.winnerId) return { error: 'Game is over' };
     if (this.pendingAction) return { error: 'Pending action must be resolved first' };
     if (this.playerOrder[this.currentPlayerIndex] !== playerId) return { error: 'Not your turn' };
-    if (this.turnPhase !== 'draw') return { error: 'Already drew cards this turn' };
-
-    // Fix 2: draw 5 when hand empty at start of turn
-    const handSize = this.hands.get(playerId)!.length;
-    const drawCount = handSize === 0 ? 5 : 2;
-    const drawn = this.drawCards(playerId, drawCount);
-    this.turnPhase = 'action';
-    this.actionsRemaining = 3;
-    this.lastAction = `${this.getName(playerId)} drew ${drawn} cards`;
+    // Auto-draw makes this a no-op; kept for backward compatibility
+    if (this.turnPhase !== 'draw') return {};
+    this.autoDrawCurrentPlayer();
     return {};
   }
 
@@ -219,6 +213,7 @@ export class GameEngine {
       return {};
     }
 
+    if (pa.jsnChain) return { error: 'Waiting for Just Say No chain to resolve' };
     if (!pa.targetPlayerIds.includes(playerId)) return { error: 'Not your action to respond to' };
     if (pa.respondedPlayerIds.includes(playerId)) return { error: 'Already responded' };
 
@@ -266,6 +261,7 @@ export class GameEngine {
         if (result.error) return result;
         pa.respondedPlayerIds.push(playerId);
         this.lastAction = `${this.getName(playerId)} paid $${result.paid}M`;
+        this.checkWin(pa.sourcePlayerId);
         break;
       }
 
@@ -759,10 +755,18 @@ export class GameEngine {
       this.currentPlayerIndex = (this.currentPlayerIndex + 1) % this.playerOrder.length;
       attempts++;
     }
-    this.turnPhase = 'draw';
-    this.actionsRemaining = 0;
     this.turnNumber++;
-    this.lastAction = `It's ${this.getName(this.playerOrder[this.currentPlayerIndex])}'s turn`;
+    this.autoDrawCurrentPlayer();
+  }
+
+  private autoDrawCurrentPlayer() {
+    const playerId = this.playerOrder[this.currentPlayerIndex];
+    const handSize = this.hands.get(playerId)!.length;
+    const drawCount = handSize === 0 ? 5 : 2;
+    const drawn = this.drawCards(playerId, drawCount);
+    this.turnPhase = 'action';
+    this.actionsRemaining = 3;
+    this.lastAction = `${this.getName(playerId)} drew ${drawn} cards`;
   }
 
   // ─── State Getters ──────────────────────────────────────────────────
@@ -829,6 +833,11 @@ export class GameEngine {
 
     // Update winnerId
     if (this.winnerId === oldId) this.winnerId = newId;
+  }
+
+  /** Full discard pile (public info — face-up cards). Used for card counting. */
+  getFullDiscardPile(): AnyCard[] {
+    return [...this.discardPile];
   }
 
   setDisconnected(playerId: string) { this.playerConnected.set(playerId, false); }

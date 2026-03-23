@@ -5,3 +5,18 @@ dist/
 
 # Deploy scripts (contain server-specific config)
 deploy/
+
+# AI training artifacts (large, regenerable)
+packages/ai/data/checkpoints/
+packages/ai/data/training-state.json
+packages/ai/data/training-state.json.bak
+packages/ai/data/training-log.jsonl
+packages/ai/data/elo-progression.json
+packages/ai/data/dashboard.html
+packages/ai/data/leaderboard.json
+# best-model.json is intentionally committed (used by HardAI at runtime)
+
+# Python RL artifacts
+packages/python-rl/logs/
+packages/python-rl/**/*.egg-info/
+__pycache__/

@@ -1,0 +1,22 @@
+{
+  "name": "@monopoly-deal/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "arena": "tsx src/run-arena.ts",
+    "train": "tsx src/train.ts",
+    "eval": "tsx src/quick-eval.ts",
+    "graphs": "tsx src/generate-graphs.ts",
+    "build": "tsc",
+    "test:ui": "node ../../scripts/test-bots.mjs"
+  },
+  "dependencies": {
+    "@monopoly-deal/shared": "*",
+    "@monopoly-deal/server": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "~5.9.3"
+  }
+}

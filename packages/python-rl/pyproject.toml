@@ -1,0 +1,22 @@
+[project]
+name = "monopdeal-rl"
+version = "0.1.0"
+description = "Gymnasium RL environment for Monopoly Deal via Socket.IO"
+requires-python = ">=3.10"
+dependencies = [
+    "gymnasium>=1.0",
+    "numpy>=1.24",
+    "python-socketio[client]>=5.11",
+    "stable-baselines3>=2.3",
+    "sb3-contrib>=2.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "ipython"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["monopdeal_rl*"]

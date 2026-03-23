@@ -22,6 +22,7 @@ export function Room() {
               {p.name}
               {p.id === currentRoom.hostId && <span className="badge host">Hote</span>}
               {p.name === playerName && <span className="badge you">Toi</span>}
+              {p.isBot && <span className="badge bot">IA</span>}
             </li>
           ))}
         </ul>
